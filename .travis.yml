@@ -3,14 +3,14 @@ dist: trusty
 
 env:
   - PYTHONASYNCIODEBUG=1
+  - SERIAL_REQUIRED=1
 
 matrix:
   include:
     - language: python
       python: 3.5
       before_script:
-        - sudo pip install pyserial   # In Travis, plain pip always refers to the selected Python version. Nice.
+        - pip install pyserial   # In Travis, plain pip always refers to the selected Python version. Nice.
         - cd python
       script:
-        - ./popcop_test.py
-
+        - ./popcop_test.py -vv

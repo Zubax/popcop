@@ -37,6 +37,9 @@ import contextlib
 try:
     import serial
 except ImportError:
+    if os.environ.get('SERIAL_REQUIRED', 0):
+        raise ImportError('Could not import serial, and $SERIAL_REQUIRED is set')
+
     serial = None
 
 
