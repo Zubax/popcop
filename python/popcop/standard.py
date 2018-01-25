@@ -87,7 +87,7 @@ class NodeInfoMessage(MessageBase):
     def __init__(self, decode_from: typing.Optional[bytes]=None):
         self.software_image_crc = None
         self.software_vcs_commit_id = 0
-        self.software_build_timestamp_utc = datetime.datetime.fromtimestamp(0)
+        self.software_build_timestamp_utc = datetime.datetime.utcfromtimestamp(0)
         self.software_version_major = 0
         self.software_version_minor = 0
         self.hardware_version_major = 0
@@ -118,7 +118,7 @@ class NodeInfoMessage(MessageBase):
             if (flags & self._Flags.SOFTWARE_IMAGE_CRC_AVAILABLE) == 0:
                 self.software_image_crc = None
 
-            self.software_build_timestamp_utc = datetime.datetime.fromtimestamp(build_timestamp_utc)
+            self.software_build_timestamp_utc = datetime.datetime.utcfromtimestamp(build_timestamp_utc)
 
             self.software_release_build = bool(flags & self._Flags.SOFTWARE_RELEASE_BUILD)
             self.software_dirty_build = bool(flags & self._Flags.SOFTWARE_DIRTY_BUILD)
@@ -142,9 +142,13 @@ class NodeInfoMessage(MessageBase):
 
         build_timestamp_utc = self.software_build_timestamp_utc or 0
         if hasattr(build_timestamp_utc, 'timestamp'):
-            build_timestamp_utc = int(build_timestamp_utc.timestamp())
+            # UTC timestamp conversion https://docs.python.org/3/library/datetime.html#datetime.datetime.timestamp
+            build_timestamp_utc = int(build_timestamp_utc.replace(tzinfo=datetime.timezone.utc).timestamp())
         else:
             build_timestamp_utc = int(build_timestamp_utc)
+
+        if not (0 <= build_timestamp_utc < 2**32):
+            raise ValueError('Invalid build timestamp: %r' % build_timestamp_utc)
 
         out = self.SERIALIZER.pack(int(self.software_image_crc or 0),
                                    self.software_vcs_commit_id,

@@ -37,6 +37,9 @@ import contextlib
 try:
     import serial
 except ImportError:
+    if os.environ.get('SERIAL_REQUIRED', 0):
+        raise ImportError('Could not import serial, and $SERIAL_REQUIRED is set')
+
     serial = None
 
 
@@ -198,7 +201,7 @@ class TestStandardMessages(unittest.TestCase):
         if isinstance(m, popcop.standard.NodeInfoMessage):
             self.assertEqual(m.software_image_crc, 0xFFDEBC9A78563412)
             self.assertEqual(m.software_vcs_commit_id, 0xDEADBEEF)
-            self.assertEqual(m.software_build_timestamp_utc.isoformat(), '2069-05-07T21:28:34')
+            self.assertEqual(m.software_build_timestamp_utc.isoformat(), '2069-05-07T18:28:34')
             self.assertEqual(m.software_version_major, 1)
             self.assertEqual(m.software_version_minor, 2)
             self.assertEqual(m.hardware_version_major, 3)

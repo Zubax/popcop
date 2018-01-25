@@ -151,7 +151,7 @@ inline bool doesParserOutputMatch(const transport::ParserOutput& o,
 template <typename... Args>
 constexpr inline std::array<std::uint8_t, sizeof...(Args)> makeArray(const Args... a)
 {
-    return std::array<std::uint8_t, sizeof...(Args)>{std::uint8_t(a)...};
+    return std::array<std::uint8_t, sizeof...(Args)>{{std::uint8_t(a)...}};
 }
 
 
@@ -752,7 +752,7 @@ TEST_CASE("ScalarCodecBoundaries")
 TEST_CASE("NodeInfoMessageCodec")
 {
     std::array<std::uint8_t, 212> carefully_crafted_message
-    {
+    {{
         0x00, 0x00,                                       // Message ID
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00,               // Reserved in the header
 
@@ -791,7 +791,7 @@ TEST_CASE("NodeInfoMessageCodec")
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 
         0x01, 0x02, 0x03, 0x04
-    };
+    }};
 
     // Check whether all items are inited correctly
     REQUIRE(carefully_crafted_message.back() == 0x04);
