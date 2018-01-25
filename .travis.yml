@@ -31,10 +31,8 @@ matrix:
             - ubuntu-toolchain-r-test
           packages:
             - g++-7
-      env:
-        - CC=gcc-7 && CXX=g++-7
       script:
-        - cd c++/test/ && cmake . && make
+        - CC=gcc-7 && CXX=g++-7 && cd c++/test/ && cmake . && make
         - ./popcop_test
 
     - language: cpp
@@ -44,8 +42,6 @@ matrix:
             - llvm-toolchain-trusty-5.0
           packages:
             - clang-5.0
-      env:
-        - CC=clang-5.0 && CXX=clang++-5.0
       script:
-        - cd c++/test/ && cmake . && make
+        - CC=clang-5.0 && CXX=clang++-5.0 && cd c++/test/ && cmake . && make
         - ./popcop_test
