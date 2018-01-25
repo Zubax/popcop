@@ -2,8 +2,9 @@ sudo: required
 dist: trusty
 
 env:
-  - PYTHONASYNCIODEBUG=1
-  - SERIAL_REQUIRED=1
+  global:
+    - PYTHONASYNCIODEBUG=1
+    - SERIAL_REQUIRED=1
 
 matrix:
   include:
