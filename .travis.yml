@@ -43,5 +43,5 @@ matrix:
           packages:
             - clang-5.0
       script:
-        - CC=clang-5.0 && CXX=clang++-5.0 && cd c++/test/ && cmake . && make
+        - CC=clang-5.0 && CXX=clang++-5.0 && cd c++/test/ && cmake CMAKE_CXX_FLAGS='-stdlib=libc++' . && make
         - ./popcop_test
