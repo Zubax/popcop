@@ -9,7 +9,7 @@ matrix:
     - language: python
       python: 3.5
       before_script:
-        - sudo pip3 install serial
+        - sudo pip install serial   # In Travis, plain pip always refers to the selected Python version. Nice.
         - cd python
       script:
         - ./popcop_test.py
