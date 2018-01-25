@@ -42,7 +42,9 @@ matrix:
             - llvm-toolchain-trusty-5.0
           packages:
             - clang-5.0
+            - libstdc++-7-dev
       script:
+        - clang++-5.0 -E -x c++ - -v < /dev/null
         - cd c++/test/
         - cmake -DCMAKE_C_COMPILER=clang-5.0 -DCMAKE_CXX_COMPILER=clang++-5.0 .
         - make
