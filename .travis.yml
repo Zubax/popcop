@@ -23,3 +23,28 @@ matrix:
         - cd python
       script:
         - ./popcop_test.py -vv
+
+    - language: cpp
+      compiler:
+        - clang
+        - gcc
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-trusty-5.0
+          packages:
+            - g++-7.2
+            - clang-5.0
+      env:
+        - MATRIX_EVAL="CC=gcc-7.2 && CXX=g++-7.2"
+        - MATRIX_EVAL="CC=clang-5.0 && CXX=clang++-5.0"
+      before_script:
+        - cd c++/test/
+        - cmake .
+        - make
+      script:
+        - ./popcop_test
+
+before_install:
+  - eval "${MATRIX_EVAL}"
