@@ -25,26 +25,29 @@ matrix:
         - ./popcop_test.py -vv
 
     - language: cpp
-      compiler:
-        - clang
-        - gcc
+      compiler: gcc
       addons:
         apt:
           sources:
             - ubuntu-toolchain-r-test
-            - llvm-toolchain-trusty-5.0
           packages:
-            - g++-7.2
-            - clang-5.0
+            - g++-7
       env:
-        - MATRIX_EVAL="CC=gcc-7.2 && CXX=g++-7.2"
-        - MATRIX_EVAL="CC=clang-5.0 && CXX=clang++-5.0"
-      before_script:
-        - cd c++/test/
-        - cmake .
-        - make
+        - CC=gcc-7 && CXX=g++-7
       script:
+        - cd c++/test/ && cmake . && make
         - ./popcop_test
 
-before_install:
-  - eval "${MATRIX_EVAL}"
+    - language: cpp
+      compiler: clang
+      addons:
+        apt:
+          sources:
+            - llvm-toolchain-trusty-5.0
+          packages:
+            - clang-5.0
+      env:
+        - CC=clang-5.0 && CXX=clang++-5.0
+      script:
+        - cd c++/test/ && cmake . && make
+        - ./popcop_test
