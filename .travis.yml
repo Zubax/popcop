@@ -3,15 +3,15 @@ dist: trusty
 
 env:
   global:
-    - PYTHONASYNCIODEBUG=1
-    - SERIAL_REQUIRED=1
+    - PYTHONASYNCIODEBUG=1      # https://docs.python.org/3/using/cmdline.html#envvar-PYTHONASYNCIODEBUG
+    - SERIAL_REQUIRED=1         # Fail test unless pyserial is available
 
 matrix:
   include:
     - language: python
       python: 3.5
       before_script:
-        - pip install pyserial   # In Travis, plain pip always refers to the selected Python version. Nice.
+        - pip install pyserial  # In Travis, plain pip always refers to the selected Python version. Nice.
         - cd python
       script:
         - ./popcop_test.py -vv
@@ -19,7 +19,7 @@ matrix:
     - language: python
       python: 3.6
       before_script:
-        - pip install pyserial   # In Travis, plain pip always refers to the selected Python version. Nice.
+        - pip install pyserial
         - cd python
       script:
         - ./popcop_test.py -vv
