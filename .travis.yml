@@ -25,7 +25,6 @@ matrix:
         - ./popcop_test.py -vv
 
     - language: cpp
-      compiler: gcc
       addons:
         apt:
           sources:
@@ -39,7 +38,6 @@ matrix:
         - ./popcop_test
 
     - language: cpp
-      compiler: clang
       addons:
         apt:
           sources:
