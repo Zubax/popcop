@@ -1,0 +1,16 @@
+sudo: required
+dist: trusty
+
+env:
+  - PYTHONASYNCIODEBUG=1
+
+matrix:
+  include:
+    - language: python
+      python: 3.5
+      before_script:
+        - sudo pip3 install serial
+        - cd python
+      script:
+        - ./popcop_test.py
+
