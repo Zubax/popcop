@@ -8,7 +8,9 @@ env:
 matrix:
   include:
     - language: python
-      python: 3.5
+      python:
+        - '3.5'
+        - '3.6'
       before_script:
         - pip install pyserial   # In Travis, plain pip always refers to the selected Python version. Nice.
         - cd python
