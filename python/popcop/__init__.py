@@ -37,7 +37,7 @@ MAX_APPLICATION_SPECIFIC_FRAME_TYPE_CODE = 0x7F
 from . import transport, standard, physical
 
 
-__version__ = '0.0.1'
+__version__ = 0, 1, 0
 
 __author__ = "Pavel Kirienko"
 __license__ = "MIT"
