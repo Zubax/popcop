@@ -449,7 +449,7 @@ class Channel:
                     continue
 
                 if isinstance(out, Exception):
-                    raise ChannelInitializationException('IO worker initialization failed') from out
+                    raise ChannelInitializationException('IO worker initialization failed: %s' % out) from out
                 elif isinstance(out, IPCNotification) and (out == IPCNotification.INITIALIZATION_COMPLETED):
                     break
                 else:
@@ -623,7 +623,7 @@ class Channel:
             return
         else:
             if isinstance(obj, Exception):
-                raise ChannelException('IO worker process has encountered an unhandled exception') from obj
+                raise ChannelException('IO worker process has encountered an unhandled exception: %s' % obj) from obj
 
             assert isinstance(obj, (transport.ReceivedFrame, standard.MessageBase, bytes))
             return obj
