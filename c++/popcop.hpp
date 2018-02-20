@@ -1079,7 +1079,7 @@ static constexpr std::chrono::seconds DefaultStandardRequestTimeout = std::chron
 template <typename ScalarCodec = presentation::ScalarEncoder>
 class MessageHeaderView final
 {
-    static constexpr std::size_t MessageIDOffset        = 0;
+    static constexpr std::size_t MessageIDOffset = 0;
 
     ScalarCodec codec_;
 
@@ -1216,9 +1216,11 @@ public:
  *      24      u8[16]      globally_unique_id
  *      40      u8[80]      node_name
  *      120     u8[80]      node_description
- *      200     u8[<=255]   certificate_of_authenticity         Until the end of the message
+ *      200     u8[80]      build_environment_description
+ *      280     u8[80]      runtime_environment_description
+ *      360     u8[<=255]   certificate_of_authenticity         Until the end of the message
  *  ---------------------------------------------------
- *      <=455
+ *      <=615
  */
 template <typename ScalarCodec = presentation::ScalarEncoder>
 class NodeInfoView
@@ -1239,7 +1241,9 @@ class NodeInfoView
         static constexpr std::size_t GloballyUniqueID                =  24;
         static constexpr std::size_t NodeName                        =  40;
         static constexpr std::size_t NodeDescription                 = 120;
-        static constexpr std::size_t CertificateOfAuthenticity       = 200;
+        static constexpr std::size_t BuildEnvironmentDescription     = 200;
+        static constexpr std::size_t RuntimeEnvironmentDescription   = 280;
+        static constexpr std::size_t CertificateOfAuthenticity       = 360;
     };
 
     ScalarCodec codec_;
@@ -1447,6 +1451,26 @@ public:
     void setNodeDescription(const util::FixedCapacityString<80>& s)
     {
         codec_.setASCIIString(Offsets::NodeDescription, s);
+    }
+
+    util::FixedCapacityString<80> getBuildEnvironmentDescription() const
+    {
+        return codec_.template getASCIIString<80>(Offsets::BuildEnvironmentDescription);
+    }
+
+    void setBuildEnvironmentDescription(const util::FixedCapacityString<80>& s)
+    {
+        codec_.setASCIIString(Offsets::BuildEnvironmentDescription, s);
+    }
+
+    util::FixedCapacityString<80> getRuntimeEnvironmentDescription() const
+    {
+        return codec_.template getASCIIString<80>(Offsets::RuntimeEnvironmentDescription);
+    }
+
+    void setRuntimeEnvironmentDescription(const util::FixedCapacityString<80>& s)
+    {
+        codec_.setASCIIString(Offsets::RuntimeEnvironmentDescription, s);
     }
 
     template <typename Storage, typename = decltype(std::declval<Storage>().size())>

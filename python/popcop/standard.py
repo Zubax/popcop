@@ -67,13 +67,15 @@ class NodeInfoMessage(MessageBase):
         24      u8[16]      globally_unique_id
         40      u8[80]      node_name
         120     u8[80]      node_description
-        200     u8[<=255]   certificate_of_authenticity         Until the end of the message
+        200     u8[80]      build_environment_description
+        280     u8[80]      runtime_environment_description
+        360     u8[<=255]   certificate_of_authenticity         Until the end of the message
     ---------------------------------------------------
-        <=455
+        <=615
     """
     MESSAGE_ID = 0
 
-    SERIALIZER = struct.Struct('< Q L L 6B xx 16s 80s 80s')  # The trailing certificate_of_authenticity is excluded
+    SERIALIZER = struct.Struct('< Q L L 6B xx 16s 80s 80s 80s 80s')  # Trailing certificate_of_authenticity excluded
 
     class Mode(enum.IntEnum):
         NORMAL = 0
@@ -98,6 +100,8 @@ class NodeInfoMessage(MessageBase):
         self.globally_unique_id = bytearray([0] * 16)
         self.node_name = ''
         self.node_description = ''
+        self.build_environment_description = ''
+        self.runtime_environment_description = ''
         self.certificate_of_authenticity = bytearray()
 
         if decode_from:
@@ -112,7 +116,9 @@ class NodeInfoMessage(MessageBase):
                 mode, \
                 self.globally_unique_id, \
                 node_name, \
-                node_description \
+                node_description, \
+                build_environment_description, \
+                runtime_environment_description, \
                 = self.SERIALIZER.unpack(decode_from[:self.SERIALIZER.size])
 
             if (flags & self._Flags.SOFTWARE_IMAGE_CRC_AVAILABLE) == 0:
@@ -126,6 +132,8 @@ class NodeInfoMessage(MessageBase):
             self.mode = self.Mode(mode)
             self.node_name = _decode_fixed_capacity_string(node_name)
             self.node_description = _decode_fixed_capacity_string(node_description)
+            self.build_environment_description = _decode_fixed_capacity_string(build_environment_description)
+            self.runtime_environment_description = _decode_fixed_capacity_string(runtime_environment_description)
 
             self.certificate_of_authenticity = decode_from[self.SERIALIZER.size:]
 
@@ -161,7 +169,9 @@ class NodeInfoMessage(MessageBase):
                                    int(self.mode),
                                    bytes(self.globally_unique_id),
                                    self.node_name.encode(),
-                                   self.node_description.encode())
+                                   self.node_description.encode(),
+                                   self.build_environment_description.encode(),
+                                   self.runtime_environment_description.encode())
 
         return out + bytes(self.certificate_of_authenticity)
 
@@ -174,8 +184,9 @@ class NodeInfoMessage(MessageBase):
                 self.hardware_version_major, self.hardware_version_minor,
                 self.mode, self.globally_unique_id.hex())
 
-        out += 'name=%r, description=%r, coa=%s' % (self.node_name, self.node_description,
-                                                    self.certificate_of_authenticity.hex())
+        out += 'name=%r, description=%r, bed=%r, red=%r, coa=%s' % \
+               (self.node_name, self.node_description, self.build_environment_description,
+                self.runtime_environment_description, self.certificate_of_authenticity.hex())
         return out
 
     __repr__ = __str__
