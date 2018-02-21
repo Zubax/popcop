@@ -1722,10 +1722,7 @@ using RegisterValue = std::variant<
 >;
 
 /**
- * This is not a message class.
- * Rather, it is a base class for the following message classes:
- *  - RegisterDataRequestView
- *  - RegisterDataResponseView
+ * This is not a message class. Rather, it is a base class for the following message classes defined below.
  *
  * It can be used by the application as well, but it can't be sent or received over the wire.
  * Use the derived classes instead.
@@ -1841,7 +1838,7 @@ public:
         switch (getTypeID())
         {
         case RegisterTypeID::Empty:  { return std::monostate(); }
-        case RegisterTypeID::String: { return codec_.getASCIIString<MaxPayloadSize>(getValueOffset()); }
+        case RegisterTypeID::String: { return codec_.template getASCIIString<MaxPayloadSize>(getValueOffset()); }
 
         case RegisterTypeID::Unstructured:
         {
@@ -1894,6 +1891,31 @@ public:
     void setValue(const RegisterValue& value)
     {
         (void) value;
+    }
+
+    template <typename T>
+    std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<std::remove_cv_t<T>, bool>>
+    setScalarValue(const T& value)
+    {
+        constexpr std::size_t ItemSize = sizeof(T);
+        constexpr std::size_t NumberOfItems = MaxPayloadSize / ItemSize;
+        static_assert(NumberOfItems * ItemSize == MaxPayloadSize);
+
+        using ContainedType = util::FixedCapacityVector<T, NumberOfItems>;
+
+        RegisterValue variant;
+        variant.template emplace<ContainedType>();
+        std::template get<ContainedType>(variant).push_back(value);
+        setValue(variant);
+    }
+
+    template <typename T>
+    void setScalarValue(const bool& value)
+    {
+        RegisterValue variant;
+        variant.template emplace<RegisterValueBoolean>();
+        std::template get<RegisterValueBoolean>(variant).push_back(value);
+        setValue(variant);
     }
 };
 

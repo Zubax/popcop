@@ -1024,3 +1024,28 @@ TEST_CASE("NodeInfoMessageCodec")
     REQUIRE(std::equal(carefully_crafted_message.begin(), carefully_crafted_message.end(),
                        new_message.getSerializedMessageWithHeader().begin()));
 }
+
+
+struct RegisterDataHelper
+{
+    std::array<std::uint8_t, standard::RegisterData<>::MaxSerializedSize> buffer;
+    standard::RegisterData<> view;
+
+    template <typename... Args>
+    explicit RegisterDataHelper(const Args... a) :
+        buffer{{std::uint8_t(a)...}},
+        view(presentation::ScalarEncoder(buffer))
+    { }
+};
+
+
+TEST_CASE("RegisterData")
+{
+    {
+        RegisterDataHelper rd(0, 0);
+        REQUIRE(rd.view.getName().empty());
+        REQUIRE(rd.view.getValue().index() == 0);
+        REQUIRE(std::holds_alternative<std::monostate>(rd.view.getValue()));
+    }
+}
+
