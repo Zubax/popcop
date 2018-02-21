@@ -115,14 +115,14 @@ public:
         value_ = table[byte ^ (value_ & 0xFF)] ^ (value_ >> 8);
     }
 
-    std::uint32_t get() const { return value_ ^ 0xFFFFFFFFU; }
+    [[nodiscard]] std::uint32_t get() const { return value_ ^ 0xFFFFFFFFU; }
 
     /**
      * Checks whether the current CRC value is a correct residual.
      * This method can be used to perform 'one-pass checking' of datagrams, where the CRC is computed over
      * the payload and then over the CRC fields as well.
      */
-    bool isResidueCorrect() const
+    [[nodiscard]] bool isResidueCorrect() const
     {
         return value_ == 0xB798B438U;
     }
@@ -512,6 +512,7 @@ public:
     /**
      * Returns true if there are no more bytes to emit.
      */
+    [[nodiscard]]
     bool isFinished() const
     {
         return state_ == State::Finished;
@@ -521,6 +522,7 @@ public:
      * Returns the next byte to emit.
      * This function should not be invoked if @ref isFinished() returns true.
      */
+    [[nodiscard]]
     std::uint8_t getNextByte()
     {
         if (escaper_.isPending())
@@ -671,16 +673,16 @@ public:
     using iterator = const char*;           ///< Const is intentional
     using const_iterator = const char*;
 
-    constexpr std::size_t capacity() const { return Capacity; }
-    constexpr std::size_t max_size() const { return Capacity; }
+    [[nodiscard]] constexpr std::size_t capacity() const { return Capacity; }
+    [[nodiscard]] constexpr std::size_t max_size() const { return Capacity; }
 
-    std::size_t size()   const { return len_; }
-    std::size_t length() const { return len_; }
+    [[nodiscard]] std::size_t size()   const { return len_; }
+    [[nodiscard]] std::size_t length() const { return len_; }
 
     [[nodiscard]] // nodiscard prevents confusion with clear()
     bool empty() const { return len_ == 0; }
 
-    const char* c_str() const { return &buf_[0]; }
+    [[nodiscard]] const char* c_str() const { return &buf_[0]; }
 
     void clear()
     {
@@ -698,9 +700,10 @@ public:
         buf_[len_] = '\0';
     }
 
-    char&       front()       { return operator[](0); }
-    const char& front() const { return operator[](0); }
+    [[nodiscard]] char&       front()       { return operator[](0); }
+    [[nodiscard]] const char& front() const { return operator[](0); }
 
+    [[nodiscard]]
     char& back()
     {
         if (len_ > 0)
@@ -713,14 +716,14 @@ public:
             return buf_[0];
         }
     }
-    const char& back() const { return const_cast<FixedCapacityString*>(this)->back(); }
+    [[nodiscard]] const char& back() const { return const_cast<FixedCapacityString*>(this)->back(); }
 
     /*
      * Iterators - only const iterators are provided for safety reasons.
      * It is easy to accidentally bring the object into an invalid state by zeroing a char in the middle.
      */
-    const char* begin() const { return &buf_[0]; }
-    const char* end()   const { return &buf_[len_]; }
+    [[nodiscard]] const char* begin() const { return &buf_[0]; }
+    [[nodiscard]] const char* end()   const { return &buf_[len_]; }
 
     /*
      * Operators
@@ -757,6 +760,7 @@ public:
         return *this;
     }
 
+    [[nodiscard]]
     char& operator[](std::size_t index)
     {
         if (index < len_)
@@ -769,23 +773,27 @@ public:
             return back();
         }
     }
+    [[nodiscard]]
     const char& operator[](std::size_t index) const
     {
         return const_cast<FixedCapacityString*>(this)->operator[](index);
     }
 
     template <typename T, typename = decltype(std::declval<T>().begin())>
+    [[nodiscard]]
     bool operator==(const T& s) const
     {
         return std::equal(begin(), end(), std::begin(s), std::end(s));
     }
 
+    [[nodiscard]]
     bool operator==(const char* s) const
     {
         return 0 == std::strncmp(this->c_str(), s, sizeof(buf_));
     }
 
     template <typename T>
+    [[nodiscard]]
     bool operator!=(const T& s) const
     {
         return !operator==(s);
@@ -812,6 +820,7 @@ public:
 };
 
 template <std::size_t LeftCapacity, std::size_t RightCapacity>
+[[nodiscard]]
 inline auto operator+(const FixedCapacityString<LeftCapacity>& left, const FixedCapacityString<RightCapacity>& right)
 {
     FixedCapacityString<LeftCapacity + RightCapacity> out(left);
@@ -820,6 +829,7 @@ inline auto operator+(const FixedCapacityString<LeftCapacity>& left, const Fixed
 }
 
 template <std::size_t Capacity>
+[[nodiscard]]
 inline auto operator+(const FixedCapacityString<Capacity>& left, const char* right)
 {
     FixedCapacityString<Capacity> out(left);
@@ -828,6 +838,7 @@ inline auto operator+(const FixedCapacityString<Capacity>& left, const char* rig
 }
 
 template <std::size_t Capacity>
+[[nodiscard]]
 inline auto operator+(const char* left, const FixedCapacityString<Capacity>& right)
 {
     FixedCapacityString<Capacity> out(left);
@@ -836,12 +847,14 @@ inline auto operator+(const char* left, const FixedCapacityString<Capacity>& rig
 }
 
 template <std::size_t Capacity>
+[[nodiscard]]
 inline bool operator==(const char* left, const FixedCapacityString<Capacity>& right)
 {
     return right == left;
 }
 
 template <std::size_t Capacity>
+[[nodiscard]]
 inline bool operator!=(const char* left, const FixedCapacityString<Capacity>& right)
 {
     return right != left;
@@ -886,10 +899,10 @@ public:
     using iterator = T*;
     using const_iterator = const T*;
 
-    constexpr std::size_t capacity() const { return Capacity; }
-    constexpr std::size_t max_size() const { return Capacity; }
+    [[nodiscard]] constexpr std::size_t capacity() const { return Capacity; }
+    [[nodiscard]] constexpr std::size_t max_size() const { return Capacity; }
 
-    std::size_t size() const { return len_; }
+    [[nodiscard]] std::size_t size() const { return len_; }
 
     [[nodiscard]] // nodiscard prevents confusion with clear()
     bool empty() const { return len_ == 0; }
@@ -912,9 +925,10 @@ public:
         }
     }
 
-    T&       front()       { return operator[](0); }
-    const T& front() const { return operator[](0); }
+    [[nodiscard]] T&       front()       { return operator[](0); }
+    [[nodiscard]] const T& front() const { return operator[](0); }
 
+    [[nodiscard]]
     T& back()
     {
         if (len_ > 0)
@@ -927,17 +941,18 @@ public:
             return buf_[0];
         }
     }
-    const T& back() const { return const_cast<FixedCapacityVector*>(this)->back(); }
+    [[nodiscard]] const T& back() const { return const_cast<FixedCapacityVector*>(this)->back(); }
 
-    T* begin() { return &buf_[0]; }
-    T* end()   { return &buf_[len_]; }
+    [[nodiscard]] T* begin() { return &buf_[0]; }
+    [[nodiscard]] T* end()   { return &buf_[len_]; }
 
-    const T* begin() const { return &buf_[0]; }
-    const T* end()   const { return &buf_[len_]; }
+    [[nodiscard]] const T* begin() const { return &buf_[0]; }
+    [[nodiscard]] const T* end()   const { return &buf_[len_]; }
 
     /*
      * Operators
      */
+    [[nodiscard]]
     T& operator[](std::size_t index)
     {
         if (index < len_)
@@ -950,18 +965,21 @@ public:
             return back();
         }
     }
+    [[nodiscard]]
     const T& operator[](std::size_t index) const
     {
         return const_cast<FixedCapacityVector*>(this)->operator[](index);
     }
 
     template <typename S, typename = decltype(std::declval<S>().begin())>
+    [[nodiscard]]
     bool operator==(const S& s) const
     {
         return std::equal(begin(), end(), std::begin(s), std::end(s));
     }
 
     template <typename S>
+    [[nodiscard]]
     bool operator!=(const S& s) const
     {
         return !operator==(s);
@@ -1078,6 +1096,7 @@ public:
     }
 
     template <typename T>
+    [[nodiscard]]
     std::enable_if_t<std::is_unsigned<T>::value, T> get(const std::size_t offset) const
     {
         assert((offset + sizeof(T)) <= buffer_size_);
@@ -1090,6 +1109,7 @@ public:
     }
 
     template <typename T>
+    [[nodiscard]]
     std::enable_if_t<std::is_signed<T>::value, T> get(const std::size_t offset) const
     {
         // This specialization handles all signed types including float and double.
@@ -1114,6 +1134,7 @@ public:
     }
 
     template <std::size_t Capacity>
+    [[nodiscard]]
     util::FixedCapacityString<Capacity> getASCIIString(const std::size_t offset) const
     {
         util::FixedCapacityString<Capacity> out;
@@ -1141,6 +1162,7 @@ public:
     }
 
     template <std::size_t Capacity>
+    [[nodiscard]]
     std::size_t getASCIIStringLength(const std::size_t offset) const
     {
         std::size_t out = 0;
@@ -1169,16 +1191,17 @@ public:
     /**
      * Returns the size of the underlying buffer, which may be larger than the serialized message itself.
      */
-    std::size_t getUnderlyingBufferSize() const { return buffer_size_; }
+    [[nodiscard]] std::size_t getUnderlyingBufferSize() const { return buffer_size_; }
 
     /**
      * Returns an immutable pointer to the underlying buffer.
      */
-    const std::uint8_t* getUnderlyingBufferPointer() const { return buffer_ptr_; }
+    [[nodiscard]] const std::uint8_t* getUnderlyingBufferPointer() const { return buffer_ptr_; }
 
     /**
      * Returns a new codec object that points to the same underlying buffer, but with a specified offset.
      */
+    [[nodiscard]]
     ScalarCodec getSubCodec(std::size_t offset) const
     {
         assert(offset <= buffer_size_);
@@ -1189,6 +1212,7 @@ public:
      * Returns an instance of Emitter that is bound to the underlying buffer.
      * Size must be provided explicitly, because the final message may be smaller than the buffer.
      */
+    [[nodiscard]]
     transport::Emitter makeEmitter(const std::uint8_t frame_type_code, const std::size_t size) const
     {
         return transport::Emitter(frame_type_code, buffer_ptr_, size);
@@ -1246,6 +1270,7 @@ public:
     /**
      * Returns true if this is valid header. Reject the message if the header is invalid.
      */
+    [[nodiscard]]
     bool isValid() const
     {
         return codec_.getUnderlyingBufferSize() >= MessageHeaderSize;
@@ -1254,6 +1279,7 @@ public:
     /**
      * Returns the message ID set in this header.
      */
+    [[nodiscard]]
     std::uint16_t getMessageID() const
     {
         if (isValid())
@@ -1269,6 +1295,7 @@ public:
     /**
      * Messages with empty payload are typically used to request data from remote nodes.
      */
+    [[nodiscard]]
     bool isMessagePayloadEmpty() const
     {
         if (isValid())
@@ -1285,6 +1312,7 @@ public:
      * Returns true if the message ID of the supplied message type matches the message ID encoded in the header.
      */
     template <template <typename> class MessageViewType>
+    [[nodiscard]]
     bool doesMessageIDMatch() const
     {
         if (isValid())
@@ -1303,6 +1331,7 @@ public:
      * codec type.
      */
     template <template <typename> class MessageViewType>
+    [[nodiscard]]
     std::optional<MessageViewType<ScalarCodec>> getMessageView() const
     {
         using Type = MessageViewType<ScalarCodec>;
@@ -1321,6 +1350,7 @@ public:
      * It accepts the message template and the scalar codec that will be used to allocate the message in.
      */
     template <template <typename> class MessageViewType>
+    [[nodiscard]]
     MessageViewType<ScalarCodec> emplaceMessage()
     {
         using Type = MessageViewType<ScalarCodec>;
@@ -1345,7 +1375,7 @@ public:
             template emplaceMessage<MessageViewTemplate>())
     { }
 
-    const auto& getSerializedMessageWithHeader() const { return buffer_; }
+    [[nodiscard]] const auto& getSerializedMessageWithHeader() const { return buffer_; }
 };
 
 /**
