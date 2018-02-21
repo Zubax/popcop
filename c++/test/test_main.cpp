@@ -643,6 +643,113 @@ TEST_CASE("FixedCapacityString")
 }
 
 
+TEST_CASE("FixedCapacityVector")
+{
+    util::FixedCapacityVector<std::int32_t, 10> vec;
+
+    REQUIRE(sizeof(vec) == 40 + sizeof(std::size_t));
+    REQUIRE(vec.empty());
+    REQUIRE(vec.capacity() == 10);
+    REQUIRE(vec.max_size() == 10);
+    REQUIRE(vec.size() == 0);
+    REQUIRE(vec.begin() == vec.end());
+
+    vec.push_back(1);
+    REQUIRE(!vec.empty());
+    REQUIRE(vec.capacity() == 10);
+    REQUIRE(vec.max_size() == 10);
+    REQUIRE(vec.size() == 1);
+    REQUIRE(vec.begin() != vec.end());
+    REQUIRE(1 == *vec.begin());
+    REQUIRE(1 == *(vec.end() - 1));
+    REQUIRE(1 == vec.front());
+    REQUIRE(1 == vec.back());
+
+    vec.push_back(2);
+    REQUIRE(!vec.empty());
+    REQUIRE(vec.capacity() == 10);
+    REQUIRE(vec.max_size() == 10);
+    REQUIRE(vec.size() == 2);
+    REQUIRE(vec.begin() != vec.end());
+    REQUIRE(1 == *vec.begin());
+    REQUIRE(2 == *(vec.end() - 1));
+    REQUIRE(1 == vec.front());
+    REQUIRE(2 == vec.back());
+
+    vec.push_back(3);
+    vec.push_back(4);
+    vec.push_back(5);
+    vec.push_back(6);
+    vec.push_back(7);
+    vec.push_back(8);
+    vec.push_back(9);
+    vec.push_back(10);
+    REQUIRE(!vec.empty());
+    REQUIRE(vec.size() == 10);
+    REQUIRE(1 == *vec.begin());
+    REQUIRE(10 == *(vec.end() - 1));
+    REQUIRE(1 == vec.front());
+    REQUIRE(10 == vec.back());
+
+    const std::int8_t arr[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    const util::FixedCapacityVector<std::int8_t, 80> vec2(std::begin(arr), std::end(arr));
+    REQUIRE(sizeof(vec2) == 80 + sizeof(std::size_t));
+    REQUIRE(!vec2.empty());
+    REQUIRE(vec2.capacity() == 80);
+    REQUIRE(vec2.max_size() == 80);
+    REQUIRE(vec2.size() == 10);
+    REQUIRE(vec2.begin() != vec2.end());
+    REQUIRE(1 == *vec2.begin());
+    REQUIRE(10 == *(vec2.end() - 1));
+    REQUIRE(1 == vec2.front());
+    REQUIRE(10 == vec2.back());
+
+    REQUIRE(vec == vec2);
+    REQUIRE(vec2 == vec);
+    REQUIRE((vec != vec2) == false);
+    REQUIRE((vec2 != vec) == false);
+
+    vec[3] = -3;
+
+    REQUIRE(vec != vec2);
+    REQUIRE(vec2 != vec);
+    REQUIRE((vec == vec2) == false);
+    REQUIRE((vec2 == vec) == false);
+
+    const util::FixedCapacityVector<std::int32_t, 10> vec_copy = vec;
+    REQUIRE(!vec_copy.empty());
+    REQUIRE(vec_copy.capacity() == 10);
+    REQUIRE(vec_copy.max_size() == 10);
+    REQUIRE(vec_copy.size() == 10);
+    REQUIRE(vec_copy.begin() != vec_copy.end());
+
+    REQUIRE(vec_copy != vec2);
+    REQUIRE(vec2 != vec_copy);
+    REQUIRE(vec == vec_copy);
+    REQUIRE(vec_copy == vec);
+    REQUIRE((vec_copy == vec2) == false);
+    REQUIRE((vec2 == vec_copy) == false);
+    REQUIRE((vec != vec_copy) == false);
+    REQUIRE((vec_copy != vec) == false);
+
+    vec.clear();
+    REQUIRE(vec.empty());
+    REQUIRE(vec.capacity() == 10);
+    REQUIRE(vec.max_size() == 10);
+    REQUIRE(vec.size() == 0);
+    REQUIRE(vec.begin() == vec.end());
+
+    REQUIRE(vec != vec2);
+    REQUIRE(vec2 != vec);
+    REQUIRE(vec != vec_copy);
+    REQUIRE(vec_copy != vec);
+    REQUIRE((vec == vec2) == false);
+    REQUIRE((vec2 == vec) == false);
+    REQUIRE((vec == vec_copy) == false);
+    REQUIRE((vec_copy == vec) == false);
+}
+
+
 TEST_CASE("ScalarCodec")
 {
     std::array<std::uint8_t, 64> underlying_buffer{};

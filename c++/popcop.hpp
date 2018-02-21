@@ -872,7 +872,7 @@ public:
     {
         while ((begin != end) && (len_ < Capacity))
         {
-            buf_[len_] = T(begin);
+            buf_[len_] = T(*begin);
             ++len_;
             ++begin;
         }
@@ -889,7 +889,7 @@ public:
     constexpr std::size_t capacity() const { return Capacity; }
     constexpr std::size_t max_size() const { return Capacity; }
 
-    std::size_t size()   const { return len_; }
+    std::size_t size() const { return len_; }
 
     [[nodiscard]] // nodiscard prevents confusion with clear()
     bool empty() const { return len_ == 0; }
@@ -897,7 +897,6 @@ public:
     void clear()
     {
         len_ = 0;
-        buf_[len_] = '\0';
     }
 
     void push_back(const T& c)
@@ -906,6 +905,10 @@ public:
         {
             buf_[len_] = c;
             ++len_;
+        }
+        else
+        {
+            assert(false);
         }
     }
 
@@ -1784,6 +1787,8 @@ class RegisterData
     }
 
 public:
+    static constexpr std::size_t MaxSerializedSize = 1 + RegisterName::Capacity + MaxPayloadSize;
+
     explicit RegisterData(const ScalarCodec& sc) : codec_(sc) { }
 
     [[nodiscard]]
