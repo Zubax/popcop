@@ -1092,7 +1092,13 @@ public:
     template <std::size_t Capacity>
     void setASCIIString(const std::size_t offset, const util::FixedCapacityString<Capacity>& s)
     {
+        static_assert(Capacity == s.capacity());    // paranoia
         set(offset, s.begin(), s.end());
+        // Zero-terminate the string unless we're utilizing the capacity fully
+        if (s.size() < s.capacity())
+        {
+            set<std::uint8_t>(offset + s.size(), 0);
+        }
     }
 
     template <typename T>
