@@ -1165,6 +1165,7 @@ public:
     [[nodiscard]]
     std::size_t getASCIIStringLength(const std::size_t offset) const
     {
+        static_assert(Capacity > 0, "What?!");
         std::size_t out = 0;
         for (out = 0; out < Capacity; out++)
         {
@@ -1175,11 +1176,7 @@ public:
             }
 
             const auto c = buffer_ptr_[index];
-            if ((c > 0) && (c < 127))
-            {
-                out++;
-            }
-            else
+            if ((c < 1) || (c >= 127))
             {
                 break;
             }
