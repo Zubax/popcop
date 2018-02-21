@@ -33,6 +33,7 @@
 #include <type_traits>
 #include <algorithm>
 #include <optional>
+#include <variant>
 #include <cstring>
 #include <cassert>
 #include <cstdint>
@@ -846,6 +847,124 @@ inline bool operator!=(const char* left, const FixedCapacityString<Capacity>& ri
     return right != left;
 }
 
+/**
+ * A vector with fixed storage, API like std::vector<>.
+ * This implementation supports only trivial types, since that is sufficient for the needs of this library.
+ */
+template <typename T, std::size_t Capacity_>
+class FixedCapacityVector
+{
+public:
+    static constexpr std::size_t Capacity = Capacity_;
+
+    static_assert(Capacity > 0, "Capacity must be positive");
+    static_assert(std::is_trivial<T>::value, "This implementation supports only trivial types.");
+
+private:
+    std::size_t len_ = 0;
+    T buf_[Capacity]{};
+
+public:
+    FixedCapacityVector() = default;
+
+    template <typename InputIterator>
+    FixedCapacityVector(InputIterator begin, const InputIterator end) // NOLINT
+    {
+        while ((begin != end) && (len_ < Capacity))
+        {
+            buf_[len_] = T(begin);
+            ++len_;
+            ++begin;
+        }
+    }
+
+    /*
+     * std::vector API
+     */
+    using value_type = T;
+    using size_type = std::size_t;
+    using iterator = T*;
+    using const_iterator = const T*;
+
+    constexpr std::size_t capacity() const { return Capacity; }
+    constexpr std::size_t max_size() const { return Capacity; }
+
+    std::size_t size()   const { return len_; }
+
+    [[nodiscard]] // nodiscard prevents confusion with clear()
+    bool empty() const { return len_ == 0; }
+
+    void clear()
+    {
+        len_ = 0;
+        buf_[len_] = '\0';
+    }
+
+    void push_back(const T& c)
+    {
+        if (len_ < Capacity)
+        {
+            buf_[len_] = c;
+            ++len_;
+        }
+    }
+
+    T&       front()       { return operator[](0); }
+    const T& front() const { return operator[](0); }
+
+    T& back()
+    {
+        if (len_ > 0)
+        {
+            return buf_[len_ - 1U];
+        }
+        else
+        {
+            assert(false);
+            return buf_[0];
+        }
+    }
+    const T& back() const { return const_cast<FixedCapacityVector*>(this)->back(); }
+
+    T* begin() { return &buf_[0]; }
+    T* end()   { return &buf_[len_]; }
+
+    const T* begin() const { return &buf_[0]; }
+    const T* end()   const { return &buf_[len_]; }
+
+    /*
+     * Operators
+     */
+    T& operator[](std::size_t index)
+    {
+        if (index < len_)
+        {
+            return buf_[index];
+        }
+        else
+        {
+            assert(false);
+            return back();
+        }
+    }
+    const T& operator[](std::size_t index) const
+    {
+        return const_cast<FixedCapacityVector*>(this)->operator[](index);
+    }
+
+    template <typename S, typename = decltype(std::declval<S>().begin())>
+    bool operator==(const S& s) const
+    {
+        return std::equal(begin(), end(), std::begin(s), std::end(s));
+    }
+
+    template <typename S>
+    bool operator!=(const S& s) const
+    {
+        return !operator==(s);
+    }
+};
+
 }   // namespace util
 
 /**
@@ -994,16 +1113,46 @@ public:
     template <std::size_t Capacity>
     util::FixedCapacityString<Capacity> getASCIIString(const std::size_t offset) const
     {
-        assert((offset + Capacity) < buffer_size_);
-
         util::FixedCapacityString<Capacity> out;
 
         for (std::size_t i = 0; i < Capacity; i++)
         {
-            const auto c = buffer_ptr_[offset + i];
+            const auto index = offset + i;
+            if (index >= buffer_size_)
+            {
+                break;
+            }
+
+            const auto c = buffer_ptr_[index];
             if ((c > 0) && (c < 127))
             {
                 out += char(c);
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return out;
+    }
+
+    template <std::size_t Capacity>
+    std::size_t getASCIIStringLength(const std::size_t offset) const
+    {
+        std::size_t out = 0;
+        for (out = 0; out < Capacity; out++)
+        {
+            const auto index = offset + out;
+            if (index >= buffer_size_)
+            {
+                break;
+            }
+
+            const auto c = buffer_ptr_[index];
+            if ((c > 0) && (c < 127))
+            {
+                out++;
             }
             else
             {
@@ -1201,7 +1350,7 @@ public:
  * This class performs encoding/decoding in/out the scalar codec on the fly,
  * so data access via its methods can be very slow.
  *
- *    Offset    Type    Name
+ *      Offset  Type        Name
  *  ---------------------------------------------------
  *      0       u64         software_image_crc
  *      8       u32         software_vcs_commit_id
@@ -1498,6 +1647,218 @@ public:
     static constexpr std::size_t getSerializedSize(const std::uint8_t certificate_of_authenticity_length)
     {
         return Offsets::CertificateOfAuthenticity + certificate_of_authenticity_length;
+    }
+};
+
+/**
+ * Register name type - an ASCII string with a bounded size.
+ */
+using RegisterName = util::FixedCapacityString<93>;
+
+/**
+ * Typesafe alias for an unstructured array of bytes.
+ */
+struct RegisterValueUnstructured : public util::FixedCapacityVector<std::uint8_t, 256> { };
+
+/**
+ * Typesafe alias for an array of boolean values.
+ */
+struct RegisterValueBoolean : public util::FixedCapacityVector<bool, 256> { };
+
+/**
+ * This big variant defines all possible values that can be contained in a register.
+ */
+using RegisterValue = std::variant<
+    std::monostate,                      ///< Empty value
+    util::FixedCapacityString<256>,
+    RegisterValueUnstructured,
+    RegisterValueBoolean,
+    // Signed integer values
+    util::FixedCapacityVector<std::int64_t, 32>,
+    util::FixedCapacityVector<std::int32_t, 64>,
+    util::FixedCapacityVector<std::int16_t, 128>,
+    util::FixedCapacityVector<std::int8_t,  256>,
+    // Unsigned integer values
+    util::FixedCapacityVector<std::uint64_t, 32>,
+    util::FixedCapacityVector<std::uint32_t, 64>,
+    util::FixedCapacityVector<std::uint16_t, 128>,
+    util::FixedCapacityVector<std::uint8_t,  256>,
+    // Floating point values
+    util::FixedCapacityVector<double, 32>,
+    util::FixedCapacityVector<float, 64>
+>;
+
+/**
+ * This is not a message class.
+ * Rather, it is a base class for the following message classes:
+ *  - RegisterDataRequestView
+ *  - RegisterDataResponseView
+ *
+ * It can be used by the application as well, but it can't be sent or received over the wire.
+ * Use the derived classes instead.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u8              type_id         @ref RegisterTypeID
+ *      1       u8[<=93]        name            ASCII name, zero-terminated.
+ *      1...94  u8[<=256]       encoded_payload Array of values whose types are defined by type_id.
+ *  -----------------------------------------------------------------------------------------------
+ *    <=350
+ */
+template <typename ScalarCodec = presentation::ScalarEncoder>
+class RegisterData
+{
+    ScalarCodec codec_;
+
+    struct Offsets
+    {
+        static constexpr std::size_t TypeID = 0;
+        static constexpr std::size_t Name   = 1;
+    };
+
+    static constexpr std::size_t MaxPayloadSize = 256;
+
+    enum class RegisterTypeID : std::uint8_t
+    {
+        Empty,              ///< No value is provided
+        String,             ///< UTF-8 encoded string of text
+        Unstructured,       ///< Raw unstructured bytes
+        Boolean,            ///< One byte per value; 0 - false, 1...255 - true
+        // Signed integers
+        I64,
+        I32,
+        I16,
+        I8,
+        // Unsigned integers
+        U64,
+        U32,
+        U16,
+        U8,
+        // IEEE754 floating point
+        F64,
+        F32,
+    };
+    static constexpr std::uint8_t NumberOfRegisterTypes = 14;
+
+    RegisterTypeID getTypeID() const
+    {
+        if (codec_.getUnderlyingBufferSize() > Offsets::TypeID)
+        {
+            const std::uint8_t value = codec_.template get<std::uint8_t>(Offsets::TypeID);
+            if (value < NumberOfRegisterTypes)
+            {
+                return RegisterTypeID(value);
+            }
+        }
+        return RegisterTypeID::Empty;
+    }
+
+    void setTypeID(const RegisterTypeID type_id)
+    {
+        codec_.set(Offsets::TypeID, std::uint8_t(type_id));
+    }
+
+    std::size_t getValueOffset() const
+    {
+        return Offsets::Name + codec_.template getASCIIStringLength<RegisterName::Capacity>(Offsets::Name);
+    }
+
+    template <typename T>
+    auto copyOut() const
+    {
+        constexpr std::size_t ItemSize = sizeof(T);
+        constexpr std::size_t NumberOfItems = MaxPayloadSize / ItemSize;
+        static_assert(NumberOfItems * ItemSize == MaxPayloadSize);
+
+        const auto value_codec = codec_.getSubCodec(getValueOffset());
+
+        util::FixedCapacityVector<T, NumberOfItems> out;
+        std::size_t offset = 0;
+        while (offset < value_codec.getUnderlyingBufferSize())
+        {
+            out.push_back(value_codec.template get<T>(offset));
+            offset += ItemSize;
+        }
+
+        return out;
+    }
+
+public:
+    explicit RegisterData(const ScalarCodec& sc) : codec_(sc) { }
+
+    [[nodiscard]]
+    RegisterName getName() const
+    {
+        return codec_.template getASCIIString<RegisterName::Capacity>(Offsets::Name);
+    }
+
+    void setName(const RegisterName& name)
+    {
+        // We must store the value temporarily because its offset is not fixed
+        const RegisterValue value = getValue();
+        codec_.setASCIIString(Offsets::Name, name);
+        setValue(value);
+    }
+
+    [[nodiscard]]
+    RegisterValue getValue() const
+    {
+        switch (getTypeID())
+        {
+        case RegisterTypeID::Empty:  { return std::monostate(); }
+        case RegisterTypeID::String: { return codec_.getASCIIString<MaxPayloadSize>(getValueOffset()); }
+
+        case RegisterTypeID::Unstructured:
+        {
+            const auto value_codec = codec_.getSubCodec(getValueOffset());
+            RegisterValueUnstructured out;
+            std::copy_n(value_codec.getUnderlyingBufferPointer(),
+                        value_codec.getUnderlyingBufferSize(),
+                        std::back_inserter(out));
+            return out;
+        }
+
+        case RegisterTypeID::Boolean:
+        {
+            const auto value_codec = codec_.getSubCodec(getValueOffset());
+            RegisterValueBoolean out;
+            for (std::size_t i = 0; i < value_codec.getUnderlyingBufferSize(); i++)
+            {
+                out.push_back(value_codec.template get<std::uint8_t>(i) != 0);
+            }
+            return out;
+        }
+
+        case RegisterTypeID::I64: { return copyOut<std::int64_t>(); }
+        case RegisterTypeID::I32: { return copyOut<std::int32_t>(); }
+        case RegisterTypeID::I16: { return copyOut<std::int16_t>(); }
+        case RegisterTypeID::I8:  { return copyOut<std::int8_t>(); }
+
+        case RegisterTypeID::U64: { return copyOut<std::uint64_t>(); }
+        case RegisterTypeID::U32: { return copyOut<std::uint32_t>(); }
+        case RegisterTypeID::U16: { return copyOut<std::uint16_t>(); }
+        case RegisterTypeID::U8:  { return copyOut<std::uint8_t>(); }
+
+        case RegisterTypeID::F64:
+        {
+            assert(sizeof(double) == 8);
+            return copyOut<double>();
+        }
+
+        case RegisterTypeID::F32:
+        {
+            assert(sizeof(float) == 4);
+            return copyOut<float>();
+        }
+        }
+
+        assert(false);
+        return {};
+    }
+
+    void setValue(const RegisterValue& value)
+    {
+        (void) value;
     }
 };
 
