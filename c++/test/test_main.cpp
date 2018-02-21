@@ -768,7 +768,6 @@ TEST_CASE("ScalarCodec")
     REQUIRE(std::abs(codec.get<float>(0)) < 1e-6F);
     REQUIRE(std::abs(codec.get<double>(0)) < 1e-9);
     REQUIRE(codec.getASCIIString<10>(0).empty());
-    REQUIRE(codec.getASCIIStringLength<10>(0) == 0);
 
     // Simple patterns
     codec.set<std::uint8_t>(0, 48);
@@ -785,16 +784,9 @@ TEST_CASE("ScalarCodec")
     }
 
     REQUIRE(codec.getASCIIString<10>(0) == "0123456");
-    REQUIRE(codec.getASCIIStringLength<10>(0) == 7);
 
     codec.setASCIIString<5>(7, "789");
     REQUIRE(codec.getASCIIString<10>(0) == "0123456789");
-    REQUIRE(codec.getASCIIStringLength<10>(0) == 10);
-    REQUIRE(codec.getASCIIStringLength<10>(1) == 9);
-    REQUIRE(codec.getASCIIStringLength<9>(0) == 9);
-    REQUIRE(codec.getASCIIStringLength<1>(0) == 1);
-    REQUIRE(codec.getASCIIStringLength<1>(9) == 1);
-    REQUIRE(codec.getASCIIStringLength<1>(10) == 0);
 
     {
         const auto a = makeArray(58, 59, 60);
@@ -1049,6 +1041,9 @@ struct RegisterDataHelper
 
 TEST_CASE("RegisterData")
 {
+    REQUIRE(351 == standard::RegisterData<>::MaxSerializedSize);
+    REQUIRE(2 == standard::RegisterData<>::MinSerializedSize);
+
     {
         RegisterDataHelper rd(0, 0);
         REQUIRE(rd.view.getName().empty());
@@ -1056,4 +1051,3 @@ TEST_CASE("RegisterData")
         REQUIRE(std::holds_alternative<std::monostate>(rd.view.getValue()));
     }
 }
-

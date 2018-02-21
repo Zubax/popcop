@@ -1166,30 +1166,6 @@ public:
         return out;
     }
 
-    template <std::size_t Capacity>
-    [[nodiscard]]
-    std::size_t getASCIIStringLength(const std::size_t offset) const
-    {
-        static_assert(Capacity > 0, "What?!");
-        std::size_t out = 0;
-        for (out = 0; out < Capacity; out++)
-        {
-            const auto index = offset + out;
-            if (index >= buffer_size_)
-            {
-                break;
-            }
-
-            const auto c = buffer_ptr_[index];
-            if ((c < 1) || (c >= 127))
-            {
-                break;
-            }
-        }
-
-        return out;
-    }
-
     /**
      * Returns the size of the underlying buffer, which may be larger than the serialized message itself.
      */
@@ -1732,10 +1708,11 @@ using RegisterValue = std::variant<
  *      Offset  Type            Name            Description
  *  -----------------------------------------------------------------------------------------------
  *      0       u8              type_id         @ref RegisterTypeID
- *      1       u8[<=93]        name            ASCII name, zero-terminated.
- *      1...94  u8[<=256]       encoded_payload Array of values whose types are defined by type_id.
+ *      1       u8              name_length     Length of the next field, also (offset_of_the_payload - 2).
+ *      2       u8[<=93]        name            ASCII name, not terminated - see the previous field.
+ *      2...95  u8[<=256]       encoded_payload Array of values whose types are defined by type_id.
  *  -----------------------------------------------------------------------------------------------
- *    <=350
+ *    <=351
  */
 template <typename ScalarCodec = presentation::ScalarEncoder>
 class RegisterData
@@ -1744,8 +1721,9 @@ class RegisterData
 
     struct Offsets
     {
-        static constexpr std::size_t TypeID = 0;
-        static constexpr std::size_t Name   = 1;
+        static constexpr std::size_t TypeID     = 0;
+        static constexpr std::size_t NameLength = 1;
+        static constexpr std::size_t Name       = 2;
     };
 
     static constexpr std::size_t MaxPayloadSize = 256;
@@ -1792,7 +1770,8 @@ class RegisterData
 
     std::size_t getValueOffset() const
     {
-        return Offsets::Name + codec_.template getASCIIStringLength<RegisterName::Capacity>(Offsets::Name);
+        return std::min(Offsets::Name + codec_.template get<std::uint8_t>(Offsets::NameLength),
+                        codec_.getUnderlyingBufferSize());
     }
 
     template <typename T>
@@ -1816,21 +1795,28 @@ class RegisterData
     }
 
 public:
-    static constexpr std::size_t MaxSerializedSize = 1 + RegisterName::Capacity + MaxPayloadSize;
+    static constexpr std::size_t MaxSerializedSize = Offsets::Name + RegisterName::Capacity + MaxPayloadSize;
+    static constexpr std::size_t MinSerializedSize = Offsets::Name;
 
     explicit RegisterData(const ScalarCodec& sc) : codec_(sc) { }
 
     [[nodiscard]]
     RegisterName getName() const
     {
-        return codec_.template getASCIIString<RegisterName::Capacity>(Offsets::Name);
+        RegisterName out;
+        for (std::size_t i = Offsets::Name; i < getValueOffset(); i++)
+        {
+            out.push_back(char(codec_.template get<std::uint8_t>(i)));
+        }
+        return out;
     }
 
     void setName(const RegisterName& name)
     {
         // We must store the value temporarily because its offset is not fixed
         const RegisterValue value = getValue();
-        codec_.setASCIIString(Offsets::Name, name);
+        codec_.template set<std::uint8_t>(std::uint8_t(name.length()));
+        codec_.set(Offsets::Name, name.begin(), name.end());
         setValue(value);
     }
 
