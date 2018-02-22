@@ -1113,13 +1113,17 @@ struct MessageHeader
 
     explicit MessageHeader(MessageID mid) : message_id(mid) { }
 
-    std::array<std::uint8_t, Size> encode() const
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient.
+     */
+    template <typename OutputIterator>
+    void encode(OutputIterator begin) const
     {
-        std::array<std::uint8_t, Size> out{};
-        presentation::StreamEncoder encoder(std::begin(out));
+        presentation::StreamEncoder encoder(begin);
         encoder.addU16(std::uint16_t(message_id));
-        assert(encoder.getStreamLength() == 2);
-        return out;
+        encoder.fillUpToOffset(8);
+        assert(encoder.getStreamLength() == 8);
     }
 };
 
@@ -1193,12 +1197,15 @@ struct NodeInfoMessage
     String runtime_environment_description;
     util::FixedCapacityVector<std::uint8_t, 255> certificate_of_authenticity;
 
-    inline MessageBuffer<MaxEncodedSize> encode() const
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient.
+     */
+    template <typename OutputIterator>
+    void encode(OutputIterator begin) const
     {
-        MessageBuffer<MaxEncodedSize> out;
-        out.append(MessageHeader(MessageID::NodeInfo).encode());
-        assert(out.size() == MessageHeader::Size);
-        presentation::StreamEncoder encoder(std::back_inserter(out));
+        MessageHeader(MessageID::NodeInfo).encode(begin);
+        presentation::StreamEncoder encoder(begin);     // Creating new encoder in order to exclude the header offset
 
         encoder.addU64(software_version.image_crc ? *software_version.image_crc : 0);
         encoder.addU32(software_version.vcs_commit_id);
@@ -1247,7 +1254,17 @@ struct NodeInfoMessage
         assert(encoder.getStreamLength() >= MinEncodedSize);
         assert(encoder.getStreamLength() <= MaxEncodedSize);
         assert(encoder.getStreamLength() ==  MinEncodedSize + certificate_of_authenticity.size());
+    }
 
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    MessageBuffer<MaxEncodedSize> encode() const
+    {
+        MessageBuffer<MaxEncodedSize> out;
+        encode(std::back_inserter(out));
         return out;
     }
 };
