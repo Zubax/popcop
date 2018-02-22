@@ -1048,11 +1048,12 @@ public:
     template <typename T> void addI32(const T& x) { addSignedInteger<4>(x); }
     template <typename T> void addI64(const T& x) { addSignedInteger<8>(x); }
 
-    void skip(std::size_t num_bytes)
+    void fillUpToOffset(const std::size_t offset, const std::uint8_t fill_value = 0)
     {
-        while (num_bytes --> 0)
+        assert(length_ <= offset);
+        while (length_ < offset)
         {
-            *output_++ = std::uint8_t(0);
+            *output_++ = fill_value;
             length_++;
         }
     }
@@ -1196,6 +1197,7 @@ struct NodeInfoMessage
     {
         MessageBuffer<MaxEncodedSize> out;
         out.append(MessageHeader(MessageID::NodeInfo).encode());
+        assert(out.size() == MessageHeader::Size);
         presentation::StreamEncoder encoder(std::back_inserter(out));
 
         encoder.addU64(software_version.image_crc ? *software_version.image_crc : 0);
@@ -1229,18 +1231,22 @@ struct NodeInfoMessage
         }
 
         encoder.addU8(std::uint8_t(mode));
-        encoder.skip(2);
+        encoder.fillUpToOffset(24);
         encoder.addBytes(globally_unique_id);
         encoder.addBytes(node_name);
+        encoder.fillUpToOffset(120);
         encoder.addBytes(node_description);
+        encoder.fillUpToOffset(200);
         encoder.addBytes(build_environment_description);
+        encoder.fillUpToOffset(280);
         encoder.addBytes(runtime_environment_description);
+        encoder.fillUpToOffset(360);
 
         assert(encoder.getStreamLength() == MinEncodedSize);
         encoder.addBytes(certificate_of_authenticity);
         assert(encoder.getStreamLength() >= MinEncodedSize);
         assert(encoder.getStreamLength() <= MaxEncodedSize);
-        assert(encoder.getStreamLength() == MinEncodedSize + certificate_of_authenticity.size());
+        assert(encoder.getStreamLength() ==  MinEncodedSize + certificate_of_authenticity.size());
 
         return out;
     }

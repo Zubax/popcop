@@ -802,7 +802,7 @@ TEST_CASE("StreamEncoder")
     REQUIRE(vec[4] == 48);
     REQUIRE(vec[5] == 117);
 
-    encoder.skip(3);
+    encoder.fillUpToOffset(9, 42);
     REQUIRE(encoder.getStreamLength() == 9);
     REQUIRE(vec.size() == 9);
     REQUIRE(vec[0] == 123);
@@ -811,16 +811,16 @@ TEST_CASE("StreamEncoder")
     REQUIRE(vec[3] == 138);
     REQUIRE(vec[4] == 48);
     REQUIRE(vec[5] == 117);
-    REQUIRE(vec[6] == 0);
-    REQUIRE(vec[7] == 0);
-    REQUIRE(vec[8] == 0);
+    REQUIRE(vec[6] == 42);
+    REQUIRE(vec[7] == 42);
+    REQUIRE(vec[8] == 42);
 
     encoder.addBytes(makeArray(1, 2, 3, 4, 5, 6));
     REQUIRE(encoder.getStreamLength() == 15);
     REQUIRE(vec.size() == 15);
-    REQUIRE(vec[6] == 0);
-    REQUIRE(vec[7] == 0);
-    REQUIRE(vec[8] == 0);
+    REQUIRE(vec[6] == 42);
+    REQUIRE(vec[7] == 42);
+    REQUIRE(vec[8] == 42);
     REQUIRE(vec[9] == 1);
     REQUIRE(vec[10] == 2);
     REQUIRE(vec[11] == 3);
@@ -865,9 +865,9 @@ TEST_CASE("StreamEncoder")
 }
 
 
-TEST_CASE("NodeInfoMessageEncoding")
+TEST_CASE("NodeInfoMessage")
 {
-    std::array<std::uint8_t, 372> carefully_crafted_message
+    const std::array<std::uint8_t, 372> carefully_crafted_message
     {{
         0x00, 0x00,                                       // Message ID
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00,               // Reserved in the header
@@ -933,4 +933,40 @@ TEST_CASE("NodeInfoMessageEncoding")
 
     // Check whether all items are inited correctly
     REQUIRE(carefully_crafted_message.back() == 0x04);
+
+    standard::NodeInfoMessage msg;
+
+    msg.software_version.image_crc = 0xFFDEBC9A78563412ULL;
+    msg.software_version.vcs_commit_id = 0xDEADBEEFUL;
+    msg.software_version.build_timestamp_utc = 0xBADF00D2UL;
+    msg.software_version.major = 1;
+    msg.software_version.minor = 2;
+    msg.software_version.release_build = true;
+    msg.software_version.dirty_build = true;
+
+    msg.hardware_version.major = 3;
+    msg.hardware_version.minor = 4;
+
+    msg.mode = standard::NodeInfoMessage::Mode::Normal;
+    msg.globally_unique_id = makeArray(0x10, 0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A, 0x09,
+                                       0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01);
+
+    msg.node_name = "Hello!";
+    msg.node_description = "Space!";
+    msg.build_environment_description = "upyachka";
+    msg.runtime_environment_description = "RUNTIME!";
+
+    msg.certificate_of_authenticity.push_back(1);
+    msg.certificate_of_authenticity.push_back(2);
+    msg.certificate_of_authenticity.push_back(3);
+    msg.certificate_of_authenticity.push_back(4);
+
+    const auto encoded = msg.encode();
+    REQUIRE(encoded.size() == 8 + 360 + 4);
+
+    std::cout << "Manually constructed:" << std::endl;
+    printHexDump(carefully_crafted_message);
+    std::cout << "Rendered:" << std::endl;
+    printHexDump(encoded);
+    REQUIRE(std::equal(carefully_crafted_message.begin(), carefully_crafted_message.end(), encoded.begin()));
 }
