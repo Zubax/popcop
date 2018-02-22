@@ -155,6 +155,21 @@ constexpr inline std::array<std::uint8_t, sizeof...(Args)> makeArray(const Args.
 }
 
 
+template <typename First, typename Second>
+constexpr inline bool areSubSequencesEqual(const First& f, const Second& s)
+{
+    for (std::size_t i = 0; i < std::min(f.size(), s.size()); i++)
+    {
+        if (f[i] != s[i])
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
 inline bool isParserOutputEmpty(const transport::ParserOutput& o)
 {
     const bool res = (o.getReceivedFrame() == nullptr) && (o.getExtraneousData() == nullptr);
@@ -1023,31 +1038,4 @@ TEST_CASE("NodeInfoMessageCodec")
 
     REQUIRE(std::equal(carefully_crafted_message.begin(), carefully_crafted_message.end(),
                        new_message.getSerializedMessageWithHeader().begin()));
-}
-
-
-struct RegisterDataHelper
-{
-    std::array<std::uint8_t, standard::RegisterData<>::MaxSerializedSize> buffer;
-    standard::RegisterData<> view;
-
-    template <typename... Args>
-    explicit RegisterDataHelper(const Args... a) :
-        buffer{{std::uint8_t(a)...}},
-        view(presentation::ScalarEncoder(buffer))
-    { }
-};
-
-
-TEST_CASE("RegisterData")
-{
-    REQUIRE(351 == standard::RegisterData<>::MaxSerializedSize);
-    REQUIRE(2 == standard::RegisterData<>::MinSerializedSize);
-
-    {
-        RegisterDataHelper rd(0, 0);
-        REQUIRE(rd.view.getName().empty());
-        REQUIRE(rd.view.getValue().index() == 0);
-        REQUIRE(std::holds_alternative<std::monostate>(rd.view.getValue()));
-    }
 }
