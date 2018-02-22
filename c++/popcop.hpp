@@ -880,7 +880,7 @@ private:
 public:
     FixedCapacityVector() = default;
 
-    template <typename InputIterator>
+    template <typename InputIterator, typename = std::enable_if_t<!std::is_integral_v<InputIterator>>>
     FixedCapacityVector(InputIterator begin, const InputIterator end) // NOLINT
     {
         while ((begin != end) && (len_ < Capacity))
@@ -888,6 +888,14 @@ public:
             buf_[len_] = T(*begin);
             ++len_;
             ++begin;
+        }
+    }
+
+    FixedCapacityVector(std::size_t count, const T& value)
+    {
+        while (count --> 0)
+        {
+            push_back(value);
         }
     }
 
@@ -948,6 +956,9 @@ public:
 
     [[nodiscard]] const T* begin() const { return &buf_[0]; }
     [[nodiscard]] const T* end()   const { return &buf_[len_]; }
+
+    [[nodiscard]] T* data() { return &buf_; }
+    [[nodiscard]] const T* data() const { return &buf_; }
 
     /*
      * Operators

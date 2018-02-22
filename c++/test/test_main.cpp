@@ -762,6 +762,17 @@ TEST_CASE("FixedCapacityVector")
     REQUIRE((vec2 == vec) == false);
     REQUIRE((vec == vec_copy) == false);
     REQUIRE((vec_copy == vec) == false);
+
+    util::FixedCapacityVector<std::int32_t, 6> vec3(5, 123);
+    REQUIRE(!vec3.empty());
+    REQUIRE(vec3.capacity() == 6);
+    REQUIRE(vec3.max_size() == 6);
+    REQUIRE(vec3.size() == 5);
+    REQUIRE(vec3[0] == 123);
+    REQUIRE(vec3[1] == 123);
+    REQUIRE(vec3[2] == 123);
+    REQUIRE(vec3[3] == 123);
+    REQUIRE(vec3[4] == 123);
 }
 
 
