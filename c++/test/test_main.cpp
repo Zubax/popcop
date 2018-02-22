@@ -1005,4 +1005,12 @@ TEST_CASE("NodeInfoMessage")
     std::cout << "Rendered:" << std::endl;
     printHexDump(encoded);
     REQUIRE(std::equal(carefully_crafted_message.begin(), carefully_crafted_message.end(), encoded.begin()));
+
+    /*
+     * Decoding test
+     */
+    const auto m2 = standard::NodeInfoMessage::tryDecode(carefully_crafted_message.begin(),
+                                                         carefully_crafted_message.end());
+    REQUIRE(m2);
+    // TODO: test this
 }
