@@ -605,19 +605,6 @@ public:
 namespace util
 {
 /**
- * A helper for constructing integer types of given bit width.
- */
-template <std::size_t BitWidth>
-struct UnsignedImpl;
-template <> struct UnsignedImpl<8>  { using Type = std::uint8_t; };
-template <> struct UnsignedImpl<16> { using Type = std::uint16_t; };
-template <> struct UnsignedImpl<32> { using Type = std::uint32_t; };
-template <> struct UnsignedImpl<64> { using Type = std::uint64_t; };
-
-template <std::size_t BitWidth>
-using Unsigned = typename UnsignedImpl<BitWidth>::Type;
-
-/**
  * A string with fixed storage, API like std::string.
  */
 template <std::size_t Capacity_>
@@ -899,6 +886,12 @@ public:
         }
     }
 
+    template <typename Container, typename = decltype(std::begin(std::declval<Container>()))>
+    void append(const Container& other)
+    {
+        std::copy(std::begin(other), std::end(other), std::back_inserter(*this));
+    }
+
     /*
      * std::vector API
      */
@@ -1012,205 +1005,70 @@ static constexpr std::uint8_t StandardFrameTypeCode               = 0xFF;
 static constexpr std::uint8_t MaxApplicationSpecificFrameTypeCode = 0x7F;
 
 /**
- * Helper type used to specify whether an entity is mutable.
+ * A simple helper class that writes out encoded data into a designated iterator.
  */
-enum class Mutability
+template <typename OutputByteIterator>
+class StreamEncoder
 {
-    Immutable,
-    Mutable
-};
-
-/**
- * This base can be inherited by frame structures or it can be used directly.
- *
- * It provides convenient functions that enable easy serialization and
- * deserialization of fields that are of primitive types, ensuring correct byte ordering.
- * Refer to the methods set(), setASCIIString(), get(), getASCIIString() for more info.
- *
- * It is also possible to avoid serialization completely by merely treating data structures as
- * raw array of bytes (via std::memcpy()); however, this approach will break on architectures that
- * are not little-endian; additionally, it is unsafe because it relies on type punning.
- */
-template <Mutability UnderlyingBufferMutability>
-class ScalarCodec
-{
-    using BytePtr = std::conditional_t<UnderlyingBufferMutability == Mutability::Mutable,
-                                       std::uint8_t*,
-                                       const std::uint8_t*>;
-    // The fields are non-const because we want it to be copyable.
-    std::size_t buffer_size_;
-    BytePtr buffer_ptr_;
-
-    /// Internal use only
-    ScalarCodec(BytePtr buf, std::size_t sz) :
-        buffer_size_(sz),
-        buffer_ptr_(buf)
-    {
-        assert(buffer_ptr_ != nullptr);
-    }
+    std::size_t length_ = 0;
+    OutputByteIterator output_;
 
 public:
-    /**
-     * This constructor binds the serializer to an arbitrary underlying buffer that
-     * has methods .size() and .data(), such as the standard std::array<>, std::vector<>,
-     * or the AlignedBufferView class defined in this module.
-     */
-    template <typename T,
-              typename = decltype(std::declval<T>().size()),
-              typename = decltype(std::declval<T>().data())>
-    explicit ScalarCodec(T& buffer) :
-        buffer_size_(buffer.size()),
-        buffer_ptr_(buffer.data())
-    {
-        assert(buffer_ptr_ != nullptr);
-    }
+    explicit StreamEncoder(OutputByteIterator begin) : output_(begin) { }
 
-    template <typename T>
-    std::enable_if_t<std::is_unsigned<T>::value> set(const std::size_t offset, const T& value)
+    template <std::size_t NumBytes, typename T>
+    void addUnsignedInteger(const T& value)
     {
-        static_assert(UnderlyingBufferMutability == Mutability::Mutable, "The underlying buffer is immutable");
-        assert((offset + sizeof(T)) <= buffer_size_);
-        for (std::size_t i = 0; i < sizeof(T); i++)         // Dear compiler, consider unrolling this please.
+        static_assert(std::is_unsigned_v<T>,
+                      "The type must be unsigned. If you're using an integer literal, add the U suffix to it.");
+        for (std::size_t i = 0; i < NumBytes; i++)         // Dear compiler, consider unrolling this please.
         {
-            buffer_ptr_[offset + i] = std::uint8_t(value >> (i * 8U));
+            *output_++ = std::uint8_t(value >> (i * 8U));
+            length_++;
         }
     }
 
-    template <typename T>
-    std::enable_if_t<std::is_signed<T>::value> set(const std::size_t offset, const T& value)
+    template <std::size_t NumBytes, typename T>
+    void addSignedInteger(const T& value)
     {
-        // This specialization handles all signed types including float and double.
-        // Long double might fail at compile time if it is greater than uint64.
-        using Unsigned = util::Unsigned<sizeof(T) * 8>;
-        Unsigned u{};
-        (void) std::memcpy(&u, &value, sizeof(T));  // Copy because we don't want to violate strict aliasing rules
-        set<Unsigned>(offset, u);
+        static_assert(std::is_signed_v<T> && std::is_integral_v<T>);
+        std::make_unsigned_t<T> u = 0;
+        static_assert(sizeof(u) == sizeof(value));
+        std::memcpy(&u, &value, sizeof(u));
+        addUnsignedInteger<NumBytes>(u);
     }
 
-    template <typename InputIterator>
-    void set(std::size_t offset, InputIterator begin, const InputIterator end)
+    template <typename T> void addU8(const T& x)  { addUnsignedInteger<1>(x); }
+    template <typename T> void addU16(const T& x) { addUnsignedInteger<2>(x); }
+    template <typename T> void addU32(const T& x) { addUnsignedInteger<4>(x); }
+    template <typename T> void addU64(const T& x) { addUnsignedInteger<8>(x); }
+
+    template <typename T> void addI8(const T& x)  { addSignedInteger<1>(x); }
+    template <typename T> void addI16(const T& x) { addSignedInteger<2>(x); }
+    template <typename T> void addI32(const T& x) { addSignedInteger<4>(x); }
+    template <typename T> void addI64(const T& x) { addSignedInteger<8>(x); }
+
+    void skip(std::size_t num_bytes)
     {
-        static_assert(UnderlyingBufferMutability == Mutability::Mutable, "The underlying buffer is immutable");
-        while (begin != end)
+        while (num_bytes --> 0)
         {
-            assert(offset < buffer_size_);
-            buffer_ptr_[offset] = std::uint8_t(*begin);
-            ++offset;
-            ++begin;
+            *output_++ = std::uint8_t(0);
+            length_++;
         }
     }
 
-    template <std::size_t Capacity>
-    void setASCIIString(const std::size_t offset, const util::FixedCapacityString<Capacity>& s)
+    template <typename Container, typename = decltype(std::begin(std::declval<Container>()))>
+    void addBytes(const Container& cont)
     {
-        set(offset, s.begin(), s.end());
-        // Zero-terminate the string unless we're utilizing the capacity fully
-        if (s.size() < s.capacity())
+        for (auto b : cont)
         {
-            set<std::uint8_t>(offset + s.size(), 0);
+            *output_++ = std::uint8_t(b);
+            length_++;
         }
     }
 
-    template <typename T>
-    [[nodiscard]]
-    std::enable_if_t<std::is_unsigned<T>::value, T> get(const std::size_t offset) const
-    {
-        assert((offset + sizeof(T)) <= buffer_size_);
-        T out{};
-        for (std::size_t i = 0; i < sizeof(T); i++)         // Dear compiler, consider unrolling this please.
-        {
-            out = T(out | (T(buffer_ptr_[offset + i]) << (i * 8U)));
-        }
-        return out;
-    }
-
-    template <typename T>
-    [[nodiscard]]
-    std::enable_if_t<std::is_signed<T>::value, T> get(const std::size_t offset) const
-    {
-        // This specialization handles all signed types including float and double.
-        // Long double might fail at compile time if it is greater than uint64.
-        using Unsigned = util::Unsigned<sizeof(T) * 8>;
-        const Unsigned u = get<Unsigned>(offset);
-        T out{};
-        (void) std::memcpy(&out, &u, sizeof(T));  // Copy because we don't want to violate strict aliasing rules
-        return out;
-    }
-
-    template <typename OutputIterator>
-    void get(std::size_t offset, OutputIterator begin, const OutputIterator end) const
-    {
-        while (begin != end)
-        {
-            assert(offset < buffer_size_);
-            *begin = buffer_ptr_[offset];
-            ++offset;
-            ++begin;
-        }
-    }
-
-    template <std::size_t Capacity>
-    [[nodiscard]]
-    util::FixedCapacityString<Capacity> getASCIIString(const std::size_t offset) const
-    {
-        util::FixedCapacityString<Capacity> out;
-
-        for (std::size_t i = 0; i < Capacity; i++)
-        {
-            const auto index = offset + i;
-            if (index >= buffer_size_)
-            {
-                break;
-            }
-
-            const auto c = buffer_ptr_[index];
-            if ((c > 0) && (c < 127))
-            {
-                out += char(c);
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        return out;
-    }
-
-    /**
-     * Returns the size of the underlying buffer, which may be larger than the serialized message itself.
-     */
-    [[nodiscard]] std::size_t getUnderlyingBufferSize() const { return buffer_size_; }
-
-    /**
-     * Returns an immutable pointer to the underlying buffer.
-     */
-    [[nodiscard]] const std::uint8_t* getUnderlyingBufferPointer() const { return buffer_ptr_; }
-
-    /**
-     * Returns a new codec object that points to the same underlying buffer, but with a specified offset.
-     */
-    [[nodiscard]]
-    ScalarCodec getSubCodec(std::size_t offset) const
-    {
-        assert(offset <= buffer_size_);
-        return ScalarCodec(buffer_ptr_ + offset, buffer_size_ - offset);
-    }
-
-    /**
-     * Returns an instance of Emitter that is bound to the underlying buffer.
-     * Size must be provided explicitly, because the final message may be smaller than the buffer.
-     */
-    [[nodiscard]]
-    transport::Emitter makeEmitter(const std::uint8_t frame_type_code, const std::size_t size) const
-    {
-        return transport::Emitter(frame_type_code, buffer_ptr_, size);
-    }
+    std::size_t getStreamLength() const { return length_; }
 };
-
-/// Shortcuts; use these rather than the template directly.
-using ScalarEncoder = ScalarCodec<Mutability::Mutable>;
-using ScalarDecoder = ScalarCodec<Mutability::Immutable>;
 
 }   // namespace presentation
 
@@ -1220,14 +1078,17 @@ using ScalarDecoder = ScalarCodec<Mutability::Immutable>;
 namespace standard
 {
 /**
- * Every message is prepended by this many bytes.
- */
-static constexpr std::size_t MessageHeaderSize = 8;
-
-/**
  * Default request timeout applicable to standard messages.
  */
 static constexpr std::chrono::seconds DefaultStandardRequestTimeout = std::chrono::seconds(1);
+
+/**
+ * ID of all standard messages are listed here.
+ */
+enum class MessageID : std::uint16_t
+{
+    NodeInfo = 0,
+};
 
 /**
  * This class represents a standard frame header.
@@ -1241,136 +1102,34 @@ static constexpr std::chrono::seconds DefaultStandardRequestTimeout = std::chron
  *  ---------------------------------------------------
  *      8                                                   All standard messages are aligned at 8 bytes.
  */
-template <typename ScalarCodec = presentation::ScalarEncoder>
-class MessageHeaderView final
+struct MessageHeader
 {
-    static constexpr std::size_t MessageIDOffset = 0;
+    static constexpr std::size_t Size = 8;
 
-    ScalarCodec codec_;
+    MessageID message_id{};
 
-    ScalarCodec getPayloadCodec() const
+    MessageHeader() = default;
+
+    explicit MessageHeader(MessageID mid) : message_id(mid) { }
+
+    std::array<std::uint8_t, Size> encode() const
     {
-        return codec_.getSubCodec(MessageHeaderSize);
-    }
-
-public:
-    explicit MessageHeaderView(const ScalarCodec& sc) : codec_(sc) { }
-
-    /**
-     * Returns true if this is valid header. Reject the message if the header is invalid.
-     */
-    [[nodiscard]]
-    bool isValid() const
-    {
-        return codec_.getUnderlyingBufferSize() >= MessageHeaderSize;
-    }
-
-    /**
-     * Returns the message ID set in this header.
-     */
-    [[nodiscard]]
-    std::uint16_t getMessageID() const
-    {
-        if (isValid())
-        {
-            return codec_.template get<std::uint16_t>(MessageIDOffset);
-        }
-        else
-        {
-            return 0;
-        }
-    }
-
-    /**
-     * Messages with empty payload are typically used to request data from remote nodes.
-     */
-    [[nodiscard]]
-    bool isMessagePayloadEmpty() const
-    {
-        if (isValid())
-        {
-            return getPayloadCodec().getUnderlyingBufferSize() == 0;
-        }
-        else
-        {
-            return true;
-        }
-    }
-
-    /**
-     * Returns true if the message ID of the supplied message type matches the message ID encoded in the header.
-     */
-    template <template <typename> class MessageViewType>
-    [[nodiscard]]
-    bool doesMessageIDMatch() const
-    {
-        if (isValid())
-        {
-            return MessageViewType<ScalarCodec>::MessageID == getMessageID();
-        }
-        else
-        {
-            return false;
-        }
-    }
-
-    /**
-     * Returns an instance of message codec of the specified type bound to the underlying buffer of this header.
-     * Returns an empty option if the ID of the current message does not match the ID of the provided message
-     * codec type.
-     */
-    template <template <typename> class MessageViewType>
-    [[nodiscard]]
-    std::optional<MessageViewType<ScalarCodec>> getMessageView() const
-    {
-        using Type = MessageViewType<ScalarCodec>;
-        if (isValid() && (getMessageID() == Type::MessageID))
-        {
-            return Type(getPayloadCodec());
-        }
-        else
-        {
-            return {};
-        }
-    }
-
-    /**
-     * Use this method to create new messages.
-     * It accepts the message template and the scalar codec that will be used to allocate the message in.
-     */
-    template <template <typename> class MessageViewType>
-    [[nodiscard]]
-    MessageViewType<ScalarCodec> emplaceMessage()
-    {
-        using Type = MessageViewType<ScalarCodec>;
-        assert(isValid());
-        codec_.template set<std::uint16_t>(MessageIDOffset, Type::MessageID);
-        return Type(codec_.getSubCodec(MessageHeaderSize));
+        std::array<std::uint8_t, Size> out{};
+        presentation::StreamEncoder encoder(std::begin(out));
+        encoder.addU16(std::uint16_t(message_id));
+        assert(encoder.getStreamLength() == 2);
+        return out;
     }
 };
 
 /**
- * This simple helper class simplifies construction of new messages.
+ * A helper type that can be used by message definitions.
  */
-template <template <typename> class MessageViewTemplate, std::size_t MaxSerializedSize>
-class MessageConstructionHelper : public MessageViewTemplate<presentation::ScalarEncoder>
-{
-    // The buffer MUST be zero-initialized!
-    std::array<std::uint8_t, MessageHeaderSize + MaxSerializedSize> buffer_{};
-
-public:
-    MessageConstructionHelper() :
-        MessageViewTemplate<presentation::ScalarEncoder>(MessageHeaderView(presentation::ScalarEncoder(buffer_)).
-            template emplaceMessage<MessageViewTemplate>())
-    { }
-
-    [[nodiscard]] const auto& getSerializedMessageWithHeader() const { return buffer_; }
-};
+template <std::size_t MaxMessageSizeNotIncludingHeader>
+using MessageBuffer = util::FixedCapacityVector<std::uint8_t, MaxMessageSizeNotIncludingHeader + MessageHeader::Size>;
 
 /**
  * Node info message representation.
- * This class performs encoding/decoding in/out the scalar codec on the fly,
- * so data access via its methods can be very slow.
  *
  *      Offset  Type        Name
  *  ---------------------------------------------------
@@ -1393,165 +1152,27 @@ public:
  *  ---------------------------------------------------
  *      <=615
  */
-template <typename ScalarCodec = presentation::ScalarEncoder>
-class NodeInfoView
+struct NodeInfoMessage
 {
-    static constexpr std::uint8_t FlagSoftwareImageCRCAvailable = 1;
-    static constexpr std::uint8_t FlagSoftwareReleaseBuild      = 2;
-    static constexpr std::uint8_t FlagSoftwareDirtyBuild        = 4;
+    static constexpr std::size_t MaxEncodedSize = 615;
+    static constexpr std::size_t MinEncodedSize = 360;
 
-    struct Offsets
+    struct SoftwareVersion
     {
-        static constexpr std::size_t SoftwareImageCRC                =   0;
-        static constexpr std::size_t SoftwareVCSCommitID             =   8;
-        static constexpr std::size_t SoftwareBuildTimestampUTC       =  12;
-        static constexpr std::size_t SoftwareVersionMajorMinor       =  16;
-        static constexpr std::size_t HardwareVersionMajorMinor       =  18;
-        static constexpr std::size_t Flags                           =  20;
-        static constexpr std::size_t Mode                            =  21;
-        static constexpr std::size_t GloballyUniqueID                =  24;
-        static constexpr std::size_t NodeName                        =  40;
-        static constexpr std::size_t NodeDescription                 = 120;
-        static constexpr std::size_t BuildEnvironmentDescription     = 200;
-        static constexpr std::size_t RuntimeEnvironmentDescription   = 280;
-        static constexpr std::size_t CertificateOfAuthenticity       = 360;
+        std::optional<std::uint64_t> image_crc;
+        std::uint32_t vcs_commit_id = 0;
+        std::uint32_t build_timestamp_utc = 0;
+        std::uint8_t major = 0;
+        std::uint8_t minor = 0;
+        bool release_build = false;
+        bool dirty_build = false;
     };
 
-    ScalarCodec codec_;
-
-    void setSingleFlag(const std::uint8_t x)
-    {
-        codec_.template set<std::uint8_t>(Offsets::Flags,
-                                          std::uint8_t(codec_.template get<std::uint8_t>(Offsets::Flags) | x));
-    }
-
-    void clearSingleFlag(const std::uint8_t x)
-    {
-        codec_.template set<std::uint8_t>(Offsets::Flags,
-                                          std::uint8_t(codec_.template get<std::uint8_t>(Offsets::Flags) & ~x));
-    }
-
-    bool checkSingleFlag(const std::uint8_t x) const
-    {
-        return (codec_.template get<std::uint8_t>(Offsets::Flags) & x) == x;
-    }
-
-public:
-    static constexpr std::uint8_t MessageID = 0;   ///< ID of this message structure
-
-    explicit NodeInfoView(const ScalarCodec& sc) : codec_(sc) { }
-
-    std::optional<std::uint64_t> getSoftwareImageCRCIfAvailable() const
-    {
-        if (checkSingleFlag(FlagSoftwareImageCRCAvailable))
-        {
-            return codec_.template get<std::uint64_t>(Offsets::SoftwareImageCRC);
-        }
-        else
-        {
-            return {};
-        }
-    }
-
-    void setSoftwareImageCRC(const std::uint64_t x)
-    {
-        codec_.set(Offsets::SoftwareImageCRC, x);
-        setSingleFlag(FlagSoftwareImageCRCAvailable);
-    }
-
-    void clearSoftwareImageCRC()
-    {
-        codec_.template set<std::uint64_t>(Offsets::SoftwareImageCRC, 0);   // This is not mandatory
-        clearSingleFlag(FlagSoftwareImageCRCAvailable);
-    }
-
-    std::uint32_t getSoftwareVCSCommitID() const
-    {
-        return codec_.template get<std::uint32_t>(Offsets::SoftwareVCSCommitID);
-    }
-
-    void setSoftwareVCSCommitID(const std::uint32_t x)
-    {
-        codec_.set(Offsets::SoftwareVCSCommitID, x);
-    }
-
-    std::uint32_t getSoftwareBuildTimestampUTC() const
-    {
-        return codec_.template get<std::uint32_t>(Offsets::SoftwareBuildTimestampUTC);
-    }
-
-    void setSoftwareBuildTimestampUTC(const std::uint32_t x)
-    {
-        codec_.set(Offsets::SoftwareBuildTimestampUTC, x);
-    }
-
-    struct Version
+    struct HardwareVersion
     {
         std::uint8_t major = 0;
         std::uint8_t minor = 0;
     };
-
-    Version getSoftwareVersion() const
-    {
-        return {
-            codec_.template get<std::uint8_t>(Offsets::SoftwareVersionMajorMinor + 0),
-            codec_.template get<std::uint8_t>(Offsets::SoftwareVersionMajorMinor + 1)
-        };
-    }
-
-    void setSoftwareVersion(const Version x)
-    {
-        codec_.set(Offsets::SoftwareVersionMajorMinor + 0, x.major);
-        codec_.set(Offsets::SoftwareVersionMajorMinor + 1, x.minor);
-    }
-
-    Version getHardwareVersion() const
-    {
-        return {
-            codec_.template get<std::uint8_t>(Offsets::HardwareVersionMajorMinor + 0),
-            codec_.template get<std::uint8_t>(Offsets::HardwareVersionMajorMinor + 1)
-        };
-    }
-
-    void setHardwareVersion(const Version x)
-    {
-        codec_.set(Offsets::HardwareVersionMajorMinor + 0, x.major);
-        codec_.set(Offsets::HardwareVersionMajorMinor + 1, x.minor);
-    }
-
-    bool getSoftwareReleaseBuildFlag() const
-    {
-        return checkSingleFlag(FlagSoftwareReleaseBuild);
-    }
-
-    void setSoftwareReleaseBuildFlag(const bool x)
-    {
-        if (x)
-        {
-            setSingleFlag(FlagSoftwareReleaseBuild);
-        }
-        else
-        {
-            clearSingleFlag(FlagSoftwareReleaseBuild);
-        }
-    }
-
-    bool getSoftwareDirtyBuildFlag() const
-    {
-        return checkSingleFlag(FlagSoftwareDirtyBuild);
-    }
-
-    void setSoftwareDirtyBuildFlag(const bool x)
-    {
-        if (x)
-        {
-            setSingleFlag(FlagSoftwareDirtyBuild);
-        }
-        else
-        {
-            clearSingleFlag(FlagSoftwareDirtyBuild);
-        }
-    }
 
     enum class Mode : std::uint8_t
     {
@@ -1559,116 +1180,69 @@ public:
         Bootloader,
     };
 
-    Mode getMode() const
-    {
-        const std::uint8_t m = codec_.template get<std::uint8_t>(Offsets::Mode);
-        switch (m)
-        {
-        case std::uint8_t(Mode::Normal):
-        case std::uint8_t(Mode::Bootloader):
-        {
-            return Mode(m);
-        }
-        default:
-        {
-            return Mode::Normal;    // Fallback case
-        }
-        }
-    }
+    using String = util::FixedCapacityString<80>;
 
-    void setMode(const Mode m)
+    SoftwareVersion software_version;
+    HardwareVersion hardware_version;
+    Mode mode{};
+    std::array<std::uint8_t, 16> globally_unique_id{};
+    String node_name;
+    String node_description;
+    String build_environment_description;
+    String runtime_environment_description;
+    util::FixedCapacityVector<std::uint8_t, 255> certificate_of_authenticity;
+
+    inline MessageBuffer<MaxEncodedSize> encode() const
     {
-        switch (m)
+        MessageBuffer<MaxEncodedSize> out;
+        out.append(MessageHeader(MessageID::NodeInfo).encode());
+        presentation::StreamEncoder encoder(std::back_inserter(out));
+
+        encoder.addU64(software_version.image_crc ? *software_version.image_crc : 0);
+        encoder.addU32(software_version.vcs_commit_id);
+        encoder.addU32(software_version.build_timestamp_utc);
+        encoder.addU8(software_version.major);
+        encoder.addU8(software_version.minor);
+
+        encoder.addU8(hardware_version.major);
+        encoder.addU8(hardware_version.minor);
+
         {
-        case Mode::Bootloader:
-        case Mode::Normal:
-        {
-            codec_.set(Offsets::Mode, std::uint8_t(m));
-            return;
-        }
+            std::uint8_t flags = 0;
+
+            if (software_version.image_crc)
+            {
+                flags |= 1;
+            }
+
+            if (software_version.release_build)
+            {
+                flags |= 2;
+            }
+
+            if (software_version.dirty_build)
+            {
+                flags |= 4;
+            }
+
+            encoder.addU8(flags);
         }
 
-        // Default case - do nothing (do not set invalid values)
-        assert(false);
-    }
+        encoder.addU8(std::uint8_t(mode));
+        encoder.skip(2);
+        encoder.addBytes(globally_unique_id);
+        encoder.addBytes(node_name);
+        encoder.addBytes(node_description);
+        encoder.addBytes(build_environment_description);
+        encoder.addBytes(runtime_environment_description);
 
-    std::array<std::uint8_t, 16> getGloballyUniqueID() const
-    {
-        std::array<std::uint8_t, 16> out{};
-        codec_.get(Offsets::GloballyUniqueID, out.begin(), out.end());
+        assert(encoder.getStreamLength() == MinEncodedSize);
+        encoder.addBytes(certificate_of_authenticity);
+        assert(encoder.getStreamLength() >= MinEncodedSize);
+        assert(encoder.getStreamLength() <= MaxEncodedSize);
+        assert(encoder.getStreamLength() == MinEncodedSize + certificate_of_authenticity.size());
+
         return out;
-    }
-
-    void setGloballyUniqueID(const std::array<std::uint8_t, 16>& uid)
-    {
-        codec_.set(Offsets::GloballyUniqueID, uid.begin(), uid.end());
-    }
-
-    util::FixedCapacityString<80> getNodeName() const
-    {
-        return codec_.template getASCIIString<80>(Offsets::NodeName);
-    }
-
-    void setNodeName(const util::FixedCapacityString<80>& s)
-    {
-        codec_.setASCIIString(Offsets::NodeName, s);
-    }
-
-    util::FixedCapacityString<80> getNodeDescription() const
-    {
-        return codec_.template getASCIIString<80>(Offsets::NodeDescription);
-    }
-
-    void setNodeDescription(const util::FixedCapacityString<80>& s)
-    {
-        codec_.setASCIIString(Offsets::NodeDescription, s);
-    }
-
-    util::FixedCapacityString<80> getBuildEnvironmentDescription() const
-    {
-        return codec_.template getASCIIString<80>(Offsets::BuildEnvironmentDescription);
-    }
-
-    void setBuildEnvironmentDescription(const util::FixedCapacityString<80>& s)
-    {
-        codec_.setASCIIString(Offsets::BuildEnvironmentDescription, s);
-    }
-
-    util::FixedCapacityString<80> getRuntimeEnvironmentDescription() const
-    {
-        return codec_.template getASCIIString<80>(Offsets::RuntimeEnvironmentDescription);
-    }
-
-    void setRuntimeEnvironmentDescription(const util::FixedCapacityString<80>& s)
-    {
-        codec_.setASCIIString(Offsets::RuntimeEnvironmentDescription, s);
-    }
-
-    template <typename Storage, typename = decltype(std::declval<Storage>().size())>
-    void setCertificateOfAuthenticity(const Storage& s)
-    {
-        std::size_t len = s.size();
-        assert(len <= 255);
-        len = std::min<std::size_t>(255, len);
-
-        codec_.set(Offsets::CertificateOfAuthenticity, std::begin(s), std::begin(s) + len);
-    }
-
-    /**
-     * The output iterator must point to a storage that can accommodate at least 255 bytes of data.
-     */
-    template <typename RandomAccessOutputIterator>
-    std::uint8_t getCertificateOfAuthenticity(const RandomAccessOutputIterator out) const
-    {
-        const auto len = std::min<std::size_t>(255,
-                                               codec_.getUnderlyingBufferSize() - Offsets::CertificateOfAuthenticity);
-        codec_.get(Offsets::CertificateOfAuthenticity, out, out + len);
-        return std::uint8_t(len);
-    }
-
-    static constexpr std::size_t getSerializedSize(const std::uint8_t certificate_of_authenticity_length)
-    {
-        return Offsets::CertificateOfAuthenticity + certificate_of_authenticity_length;
     }
 };
 

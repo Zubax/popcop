@@ -776,113 +776,96 @@ TEST_CASE("FixedCapacityVector")
 }
 
 
-TEST_CASE("ScalarCodec")
+TEST_CASE("StreamEncoder")
 {
-    std::array<std::uint8_t, 64> underlying_buffer{};
-    presentation::ScalarEncoder codec(underlying_buffer);
+    util::FixedCapacityVector<std::uint8_t, 100> vec;
+    presentation::StreamEncoder encoder(std::back_inserter(vec));
 
-    REQUIRE(codec.getUnderlyingBufferSize() == 64);
-    REQUIRE(codec.getSubCodec(0).getUnderlyingBufferSize() == 64);
-    REQUIRE(codec.getSubCodec(1).getUnderlyingBufferSize() == 63);
-    REQUIRE(codec.getSubCodec(64).getUnderlyingBufferSize() == 0);
+    REQUIRE(encoder.getStreamLength() == 0);
+    REQUIRE(vec.size() == 0);
 
-    // Zero check
-    REQUIRE(codec.get<std::uint8_t>(0) == 0);
-    REQUIRE(codec.get<std::int16_t>(0) == 0);
-    REQUIRE(codec.get<std::uint32_t>(0) == 0);
-    REQUIRE(codec.get<std::int64_t>(0) == 0);
-    REQUIRE(std::abs(codec.get<float>(0)) < 1e-6F);
-    REQUIRE(std::abs(codec.get<double>(0)) < 1e-9);
-    REQUIRE(codec.getASCIIString<10>(0).empty());
+    encoder.addU8(123U);
+    encoder.addI8(-123);
+    REQUIRE(encoder.getStreamLength() == 2);
+    REQUIRE(vec.size() == 2);
+    REQUIRE(vec[0] == 123);
+    REQUIRE(vec[1] == 133);     // as unsigned
 
-    // Simple patterns
-    codec.set<std::uint8_t>(0, 48);
-    codec.set(1, std::int16_t(49 + (50 << 8)));
-    codec.set(3, std::int32_t(51 + (52 << 8) + (53 << 16) + (54 << 24)));
+    encoder.addI16(-30000);
+    encoder.addU16(30000U);
+    REQUIRE(encoder.getStreamLength() == 6);
+    REQUIRE(vec.size() == 6);
+    REQUIRE(vec[0] == 123);
+    REQUIRE(vec[1] == 133);
+    REQUIRE(vec[2] == 208);
+    REQUIRE(vec[3] == 138);
+    REQUIRE(vec[4] == 48);
+    REQUIRE(vec[5] == 117);
 
-    std::cout << "Buffer state:\n";
-    printHexDump(underlying_buffer);
+    encoder.skip(3);
+    REQUIRE(encoder.getStreamLength() == 9);
+    REQUIRE(vec.size() == 9);
+    REQUIRE(vec[0] == 123);
+    REQUIRE(vec[1] == 133);
+    REQUIRE(vec[2] == 208);
+    REQUIRE(vec[3] == 138);
+    REQUIRE(vec[4] == 48);
+    REQUIRE(vec[5] == 117);
+    REQUIRE(vec[6] == 0);
+    REQUIRE(vec[7] == 0);
+    REQUIRE(vec[8] == 0);
 
-    {
-        std::array<std::uint8_t, 7> buf{};
-        codec.get(0, std::begin(buf), std::end(buf));
-        REQUIRE(std::equal(buf.begin(), buf.end(), makeArray(48, 49, 50, 51, 52, 53, 54).begin()));
-    }
+    encoder.addBytes(makeArray(1, 2, 3, 4, 5, 6));
+    REQUIRE(encoder.getStreamLength() == 15);
+    REQUIRE(vec.size() == 15);
+    REQUIRE(vec[6] == 0);
+    REQUIRE(vec[7] == 0);
+    REQUIRE(vec[8] == 0);
+    REQUIRE(vec[9] == 1);
+    REQUIRE(vec[10] == 2);
+    REQUIRE(vec[11] == 3);
+    REQUIRE(vec[12] == 4);
+    REQUIRE(vec[13] == 5);
+    REQUIRE(vec[14] == 6);
 
-    REQUIRE(codec.getASCIIString<10>(0) == "0123456");
+    encoder.addI32(-30000000);
+    encoder.addU32(30000000U);      // 00000001 11001001 11000011 10000000
+    REQUIRE(encoder.getStreamLength() == 23);
+    REQUIRE(vec.size() == 23);
+    REQUIRE(vec[15] == 128);
+    REQUIRE(vec[16] == 60);
+    REQUIRE(vec[17] == 54);
+    REQUIRE(vec[18] == 254);
+    REQUIRE(vec[19] == 0b10000000);
+    REQUIRE(vec[20] == 0b11000011);
+    REQUIRE(vec[21] == 0b11001001);
+    REQUIRE(vec[22] == 0b00000001);
 
-    codec.setASCIIString<5>(7, "789");
-    REQUIRE(codec.getASCIIString<10>(0) == "0123456789");
-
-    {
-        const auto a = makeArray(58, 59, 60);
-        codec.set(10, a.begin(), a.end());
-    }
-
-    std::cout << "Buffer state:\n";
-    printHexDump(underlying_buffer);
-    REQUIRE(codec.getASCIIString<60>(0) == "0123456789:;<");
-
-    // struct.unpack('<q', b'12345678')
-    REQUIRE(codec.get<std::int64_t>(1) == 4050765991979987505LL);
-    REQUIRE(codec.getSubCodec(1).get<std::int64_t>(0) == 4050765991979987505LL);
-
-    // Emitter check
-    {
-        transport::Parser<> p;
-        transport::Emitter e = codec.makeEmitter(presentation::StandardFrameTypeCode, 14);
-        while (true)
-        {
-            const auto out = p.processNextByte(e.getNextByte());
-            REQUIRE(out.getExtraneousData() == nullptr);
-            if (auto f = out.getReceivedFrame())
-            {
-                REQUIRE(e.isFinished());
-                REQUIRE(f->type_code == presentation::StandardFrameTypeCode);
-                REQUIRE(f->payload.size() == 14);
-                REQUIRE(std::equal(f->payload.begin(), f->payload.end(), underlying_buffer.begin()));
-                break;
-            }
-        }
-    }
+    encoder.addI64(-30000000010LL);
+    encoder.addU64(30000000010ULL);      // 00000000 00000000 00000000 00000110 11111100 00100011 10101100 00001010
+    REQUIRE(encoder.getStreamLength() == 39);
+    REQUIRE(vec.size() == 39);
+    REQUIRE(vec[23] == 246);
+    REQUIRE(vec[24] == 83);
+    REQUIRE(vec[25] == 220);
+    REQUIRE(vec[26] == 3);
+    REQUIRE(vec[27] == 249);
+    REQUIRE(vec[28] == 255);
+    REQUIRE(vec[29] == 255);
+    REQUIRE(vec[30] == 255);
+    // the unsigned starts here
+    REQUIRE(vec[31] == 0b00001010);
+    REQUIRE(vec[32] == 0b10101100);
+    REQUIRE(vec[33] == 0b00100011);
+    REQUIRE(vec[34] == 0b11111100);
+    REQUIRE(vec[35] == 0b00000110);
+    REQUIRE(vec[36] == 0b00000000);
+    REQUIRE(vec[37] == 0b00000000);
+    REQUIRE(vec[38] == 0b00000000);
 }
 
 
-TEST_CASE("ScalarCodecBoundaries")
-{
-    std::array<std::uint8_t, 4> underlying_buffer{};
-    presentation::ScalarEncoder codec(underlying_buffer);
-
-    REQUIRE(codec.getUnderlyingBufferSize() == 4);
-    REQUIRE(codec.getSubCodec(0).getUnderlyingBufferSize() == 4);
-    REQUIRE(codec.getSubCodec(1).getUnderlyingBufferSize() == 3);
-    REQUIRE(codec.getSubCodec(2).getUnderlyingBufferSize() == 2);
-    REQUIRE(codec.getSubCodec(3).getUnderlyingBufferSize() == 1);
-    REQUIRE(codec.getSubCodec(4).getUnderlyingBufferSize() == 0);
-
-    REQUIRE(codec.get<std::uint8_t>(0) == 0);
-    REQUIRE(codec.get<std::uint8_t>(1) == 0);
-    REQUIRE(codec.get<std::uint8_t>(2) == 0);
-    REQUIRE(codec.get<std::uint8_t>(3) == 0);
-
-    codec.set<std::uint8_t>(0, 0x34);
-    codec.set<std::uint8_t>(1, 0x12);
-    codec.set<std::uint8_t>(2, 0x56);
-    codec.set<std::uint8_t>(3, 0x78);
-
-    REQUIRE(codec.get<std::uint16_t>(0) == 0x1234U);
-    REQUIRE(codec.get<std::uint16_t>(1) == 0x5612U);
-    REQUIRE(codec.get<std::uint16_t>(2) == 0x7856U);
-
-    REQUIRE(codec.get<std::uint32_t>(0) == 0x78561234UL);
-
-    REQUIRE(codec.get<std::uint8_t>(codec.getUnderlyingBufferSize() - 1)  == 0x78U);
-    REQUIRE(codec.get<std::uint16_t>(codec.getUnderlyingBufferSize() - 2) == 0x7856U);
-    REQUIRE(codec.get<std::uint32_t>(codec.getUnderlyingBufferSize() - 4) == 0x78561234UL);
-}
-
-
-TEST_CASE("NodeInfoMessageCodec")
+TEST_CASE("NodeInfoMessageEncoding")
 {
     std::array<std::uint8_t, 372> carefully_crafted_message
     {{
@@ -950,103 +933,4 @@ TEST_CASE("NodeInfoMessageCodec")
 
     // Check whether all items are inited correctly
     REQUIRE(carefully_crafted_message.back() == 0x04);
-
-    // Check the message codec
-    presentation::ScalarEncoder codec(carefully_crafted_message);
-    standard::MessageHeaderView<presentation::ScalarEncoder> header(codec);
-
-    REQUIRE(codec.getUnderlyingBufferPointer() == carefully_crafted_message.data());
-    REQUIRE(codec.getUnderlyingBufferSize() == carefully_crafted_message.size());
-
-    REQUIRE(!header.isMessagePayloadEmpty());
-    REQUIRE(header.doesMessageIDMatch<standard::NodeInfoView>());
-    REQUIRE(header.getMessageView<standard::NodeInfoView>());
-
-    // Using explicit type intentionally
-    const std::optional<standard::NodeInfoView<presentation::ScalarEncoder>> optional =
-        header.getMessageView<standard::NodeInfoView>();
-
-    REQUIRE(optional->getSoftwareImageCRCIfAvailable() == 0xFFDEBC9A78563412ULL);
-    REQUIRE(optional->getSoftwareVCSCommitID() == 0xDEADBEEFULL);
-
-    REQUIRE(optional->getSoftwareVersion().major == 1);
-    REQUIRE(optional->getSoftwareVersion().minor == 2);
-
-    REQUIRE(optional->getHardwareVersion().major == 3);
-    REQUIRE(optional->getHardwareVersion().minor == 4);
-
-    REQUIRE(optional->getMode() == standard::NodeInfoView<presentation::ScalarEncoder>::Mode::Normal);
-
-    standard::NodeInfoView<presentation::ScalarEncoder> m = *optional;
-
-    m.clearSoftwareImageCRC();
-    REQUIRE(!m.getSoftwareImageCRCIfAvailable());
-
-    REQUIRE(m.getSoftwareReleaseBuildFlag());
-    REQUIRE(m.getSoftwareDirtyBuildFlag());
-    m.setSoftwareReleaseBuildFlag(false);
-    REQUIRE(!m.getSoftwareReleaseBuildFlag());
-    REQUIRE(m.getSoftwareDirtyBuildFlag());
-    m.setSoftwareDirtyBuildFlag(false);
-    REQUIRE(!m.getSoftwareReleaseBuildFlag());
-    REQUIRE(!m.getSoftwareDirtyBuildFlag());
-    m.setSoftwareReleaseBuildFlag(true);
-    REQUIRE(m.getSoftwareReleaseBuildFlag());
-    REQUIRE(!m.getSoftwareDirtyBuildFlag());
-
-    REQUIRE(m.getSoftwareBuildTimestampUTC() == 0xBADF00D2);
-    m.setSoftwareBuildTimestampUTC(123);
-    REQUIRE(m.getSoftwareBuildTimestampUTC() == 123);
-
-    {
-        const auto arr = m.getGloballyUniqueID();
-        const auto ref = makeArray(16, 15, 14, 13, 12, 11, 10, 9,
-                                    8,  7,  6,  5,  4,  3,  2, 1);
-        REQUIRE(std::equal(arr.begin(), arr.end(), ref.begin()));
-    }
-
-    REQUIRE(m.getNodeName() == "Hello!");
-    REQUIRE(m.getNodeDescription() == "Space!");
-    REQUIRE(m.getBuildEnvironmentDescription() == "upyachka");
-    REQUIRE(m.getRuntimeEnvironmentDescription() == "RUNTIME!");
-
-    {
-        std::array<std::uint8_t, 255> arr{};
-        const auto ref = makeArray(1, 2, 3, 4);
-        REQUIRE(m.getCertificateOfAuthenticity(arr.begin()) == 4);
-        REQUIRE(std::equal(arr.begin(), arr.begin() + 4, ref.begin()));
-    }
-
-    REQUIRE(standard::NodeInfoView<presentation::ScalarEncoder>::getSerializedSize(0) == 360);
-    REQUIRE(standard::NodeInfoView<presentation::ScalarEncoder>::getSerializedSize(255) == 615);
-
-    /*
-     * Trying to re-create the above message
-     */
-    standard::MessageConstructionHelper<standard::NodeInfoView,
-                                        standard::NodeInfoView<>::getSerializedSize(255)> new_message;
-
-    // Software CRC was cleared
-    //new_message.setSoftwareImageCRC(0xFFDEBC9A78563412ULL);
-    new_message.setSoftwareVCSCommitID(0xDEADBEEFULL);
-    new_message.setSoftwareVersion({1, 2});
-    new_message.setHardwareVersion({3, 4});
-    new_message.setMode(standard::NodeInfoView<>::Mode::Normal);
-    new_message.setSoftwareReleaseBuildFlag(true);
-    new_message.setSoftwareBuildTimestampUTC(123);
-    new_message.setGloballyUniqueID(makeArray(16, 15, 14, 13, 12, 11, 10, 9,
-                                               8,  7,  6,  5,  4,  3,  2, 1));
-    new_message.setNodeName("Hello!");
-    new_message.setNodeDescription("Space!");
-    new_message.setBuildEnvironmentDescription("upyachka");
-    new_message.setRuntimeEnvironmentDescription("RUNTIME!");
-    new_message.setCertificateOfAuthenticity(makeArray(1, 2, 3, 4));
-
-    std::cout << "Manually constructed:" << std::endl;
-    printHexDump(carefully_crafted_message);
-    std::cout << "Rendered:" << std::endl;
-    printHexDump(new_message.getSerializedMessageWithHeader());
-
-    REQUIRE(std::equal(carefully_crafted_message.begin(), carefully_crafted_message.end(),
-                       new_message.getSerializedMessageWithHeader().begin()));
 }
