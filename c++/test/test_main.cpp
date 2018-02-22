@@ -413,6 +413,36 @@ inline bool validateEncodeDecodeLoop(transport::Parser<ParserBufferSize>& parser
 }
 
 
+template <std::size_t ParserBufferSize, typename FramePayloadContainer, typename ExtraneousDataContainer>
+inline void validateEncodeDecodeLoopWithStreamEmitter(transport::Parser<ParserBufferSize>& parser,
+                                                      const std::uint8_t frame_type_code,
+                                                      const FramePayloadContainer& frame_payload,
+                                                      const ExtraneousDataContainer& extraneous_data)
+{
+    const auto sink = [&](const std::uint8_t byte)
+    {
+        const auto out = parser.processNextByte(byte);
+
+        if (auto f = out.getReceivedFrame())
+        {
+            REQUIRE((reinterpret_cast<std::uintptr_t>(f->payload.data()) % transport::ParserBufferAlignment) == 0);
+            REQUIRE((f->type_code == frame_type_code));
+            REQUIRE(std::equal(frame_payload.begin(), frame_payload.end(), f->payload.begin()));
+        }
+
+        if (auto e = out.getExtraneousData())
+        {
+            REQUIRE(std::equal(extraneous_data.begin(), extraneous_data.end(), e->begin()));
+        }
+    };
+
+    // Watch magic happen! We just copy encoded data out into the output channel!
+    std::copy(frame_payload.begin(),
+              frame_payload.end(),
+              transport::StreamEmitter(frame_type_code, sink).begin());
+}
+
+
 inline std::uint8_t getRandomByte()
 {
     return std::uint8_t(std::rand());  // NOLINT
@@ -471,11 +501,17 @@ TEST_CASE("EmitterParserLoop")
 
         const auto extraneous = getRandomNumberOfRandomBytes(false);
         const auto payload = getRandomNumberOfRandomBytes();
+        const auto frame_type_code = getRandomByte();
 
         REQUIRE(validateEncodeDecodeLoop(parser,
-                                         getRandomByte(),
+                                         frame_type_code,
                                          payload,
                                          extraneous));
+
+        validateEncodeDecodeLoopWithStreamEmitter(parser,
+                                                  frame_type_code,
+                                                  payload,
+                                                  extraneous);
     }
 
     std::cout << "\r" << NumberOfIterations << " ITERATIONS DONE" << std::endl;

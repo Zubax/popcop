@@ -616,7 +616,7 @@ class StreamEmitter
     const std::function<void (std::uint8_t)> sink_;
     mutable CRCComputer crc_;
 
-    void emit(const std::uint8_t byte) const
+    void sinkWithEscaping(const std::uint8_t byte) const
     {
         if ((byte == FrameDelimiter) || (byte == EscapeCharacter))
         {
@@ -627,8 +627,6 @@ class StreamEmitter
         {
             sink_(byte);
         }
-
-        crc_.add(byte);
     }
 
 public:
@@ -661,7 +659,8 @@ public:
          */
         OutputIterator& operator=(std::uint8_t byte)
         {
-            owner_->emit(byte);
+            owner_->sinkWithEscaping(byte);
+            owner_->crc_.add(byte);
             return *this;
         }
 
@@ -697,11 +696,14 @@ public:
      */
     ~StreamEmitter()
     {
-        emit(frame_type_code_);
-        emit(std::uint8_t(crc_.get() >> 0));
-        emit(std::uint8_t(crc_.get() >> 8));
-        emit(std::uint8_t(crc_.get() >> 16));
-        emit(std::uint8_t(crc_.get() >> 24));
+        sinkWithEscaping(frame_type_code_);
+        crc_.add(frame_type_code_);
+
+        sinkWithEscaping(std::uint8_t(crc_.get() >> 0));
+        sinkWithEscaping(std::uint8_t(crc_.get() >> 8));
+        sinkWithEscaping(std::uint8_t(crc_.get() >> 16));
+        sinkWithEscaping(std::uint8_t(crc_.get() >> 24));
+
         sink_(FrameDelimiter);
     }
 
