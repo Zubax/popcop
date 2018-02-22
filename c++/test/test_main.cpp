@@ -817,19 +817,19 @@ TEST_CASE("StreamEncoder")
     util::FixedCapacityVector<std::uint8_t, 100> vec;
     presentation::StreamEncoder encoder(std::back_inserter(vec));
 
-    REQUIRE(encoder.getStreamLength() == 0);
+    REQUIRE(encoder.getOffset() == 0);
     REQUIRE(vec.size() == 0);
 
     encoder.addU8(123U);
     encoder.addI8(-123);
-    REQUIRE(encoder.getStreamLength() == 2);
+    REQUIRE(encoder.getOffset() == 2);
     REQUIRE(vec.size() == 2);
     REQUIRE(vec[0] == 123);
     REQUIRE(vec[1] == 133);     // as unsigned
 
     encoder.addI16(-30000);
     encoder.addU16(30000U);
-    REQUIRE(encoder.getStreamLength() == 6);
+    REQUIRE(encoder.getOffset() == 6);
     REQUIRE(vec.size() == 6);
     REQUIRE(vec[0] == 123);
     REQUIRE(vec[1] == 133);
@@ -839,7 +839,7 @@ TEST_CASE("StreamEncoder")
     REQUIRE(vec[5] == 117);
 
     encoder.fillUpToOffset(9, 42);
-    REQUIRE(encoder.getStreamLength() == 9);
+    REQUIRE(encoder.getOffset() == 9);
     REQUIRE(vec.size() == 9);
     REQUIRE(vec[0] == 123);
     REQUIRE(vec[1] == 133);
@@ -852,7 +852,7 @@ TEST_CASE("StreamEncoder")
     REQUIRE(vec[8] == 42);
 
     encoder.addBytes(makeArray(1, 2, 3, 4, 5, 6));
-    REQUIRE(encoder.getStreamLength() == 15);
+    REQUIRE(encoder.getOffset() == 15);
     REQUIRE(vec.size() == 15);
     REQUIRE(vec[6] == 42);
     REQUIRE(vec[7] == 42);
@@ -866,7 +866,7 @@ TEST_CASE("StreamEncoder")
 
     encoder.addI32(-30000000);
     encoder.addU32(30000000U);      // 00000001 11001001 11000011 10000000
-    REQUIRE(encoder.getStreamLength() == 23);
+    REQUIRE(encoder.getOffset() == 23);
     REQUIRE(vec.size() == 23);
     REQUIRE(vec[15] == 128);
     REQUIRE(vec[16] == 60);
@@ -879,7 +879,7 @@ TEST_CASE("StreamEncoder")
 
     encoder.addI64(-30000000010LL);
     encoder.addU64(30000000010ULL);      // 00000000 00000000 00000000 00000110 11111100 00100011 10101100 00001010
-    REQUIRE(encoder.getStreamLength() == 39);
+    REQUIRE(encoder.getOffset() == 39);
     REQUIRE(vec.size() == 39);
     REQUIRE(vec[23] == 246);
     REQUIRE(vec[24] == 83);

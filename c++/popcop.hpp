@@ -1193,7 +1193,119 @@ public:
         }
     }
 
-    std::size_t getStreamLength() const { return length_; }
+    std::size_t getOffset() const { return length_; }
+};
+
+/**
+ * The inverse of @ref StreamEncoder.
+ */
+template <typename InputByteIterator>
+class StreamDecoder
+{
+    // We use a dummy argument because only partial specializations are allowed within a class scope
+    template <std::size_t NumBytes, typename = void> struct UnsignedTypeSelector;
+    template <typename Dummy> struct UnsignedTypeSelector<1, Dummy> { using T = std::uint8_t;  };
+    template <typename Dummy> struct UnsignedTypeSelector<2, Dummy> { using T = std::uint16_t; };
+    template <typename Dummy> struct UnsignedTypeSelector<4, Dummy> { using T = std::uint32_t; };
+    template <typename Dummy> struct UnsignedTypeSelector<8, Dummy> { using T = std::uint64_t; };
+
+    std::size_t length_ = 0;
+    InputByteIterator input_;
+    const InputByteIterator end_;
+
+public:
+    StreamDecoder(InputByteIterator begin, InputByteIterator end) :
+        input_(begin),
+        end_(end)
+    { }
+
+    template <std::size_t NumBytes>
+    auto fetchUnsignedInteger()
+    {
+        using T = typename UnsignedTypeSelector<NumBytes>::T;
+        T out = 0;
+        for (std::size_t i = 0; (i < NumBytes) && (input_ != end_); i++)
+        {
+            out = T(out | (T(*input_++) << (i * 8U)));
+            length_++;
+        }
+        return out;
+    }
+
+    template <std::size_t NumBytes>
+    auto fetchSignedInteger()
+    {
+        const auto u = fetchUnsignedInteger();
+        std::make_signed_t<typename UnsignedTypeSelector<NumBytes>::T> s = 0;
+        static_assert(sizeof(s) == sizeof(u));
+        std::memcpy(&s, &u, sizeof(s));         // Remember about strict aliasing!
+        return s;
+    }
+
+    auto fetchU8()  { return fetchUnsignedInteger<1>(); }
+    auto fetchU16() { return fetchUnsignedInteger<2>(); }
+    auto fetchU32() { return fetchUnsignedInteger<4>(); }
+    auto fetchU64() { return fetchUnsignedInteger<8>(); }
+
+    auto fetchI8()  { return fetchSignedInteger<1>(); }
+    auto fetchI16() { return fetchSignedInteger<2>(); }
+    auto fetchI32() { return fetchSignedInteger<4>(); }
+    auto fetchI64() { return fetchSignedInteger<8>(); }
+
+    template <typename OutputByteIterator, typename = std::enable_if_t<!std::is_integral_v<OutputByteIterator>>>
+    void fetchBytes(OutputByteIterator out_begin, const OutputByteIterator out_end)
+    {
+        while ((out_begin != out_end) && (input_ != end_))
+        {
+            *out_begin++ = *input_++;
+            length_++;
+        }
+    }
+
+    template <typename OutputByteIterator>
+    void fetchBytes(OutputByteIterator out_begin, std::size_t amount)
+    {
+        while ((amount --> 0) && (input_ != end_))
+        {
+            *out_begin++ = *input_++;
+            length_++;
+        }
+    }
+
+    template <std::size_t Capacity>
+    void fetchASCIIString(util::FixedCapacityString<Capacity>& out_string)
+    {
+        out_string.clear();
+        for (std::size_t i = 0 ; (i < Capacity) && (input_ != end_); i++)
+        {
+            const std::uint8_t byte = fetchU8();
+            if (byte == 0)
+            {
+                break;
+            }
+            else
+            {
+                out_string.push_back(char(byte));
+            }
+        }
+    }
+
+    void skipUpToOffset(const std::size_t offset)
+    {
+        assert(length_ <= offset);
+        while ((length_ < offset) && (input_ != end_))
+        {
+            input_++;
+            length_++;
+        }
+    }
+
+    std::size_t getOffset() const { return length_; }
+
+    std::size_t getRemainingLength() const
+    {
+        return std::size_t(std::max<std::int64_t>(0, std::distance(input_, end_)));
+    }
 };
 
 }   // namespace presentation
@@ -1248,7 +1360,22 @@ struct MessageHeader
         presentation::StreamEncoder encoder(begin);
         encoder.addU16(std::uint16_t(message_id));
         encoder.fillUpToOffset(8);
-        assert(encoder.getStreamLength() == 8);
+        assert(encoder.getOffset() == 8);
+    }
+
+    template <typename InputIterator>
+    static std::optional<MessageHeader> tryDecode(InputIterator begin, InputIterator end)
+    {
+        presentation::StreamDecoder decoder(begin, end);
+        if (decoder.getRemainingLength() >= Size)
+        {
+            MessageHeader hdr(MessageID(decoder.fetchU16()));
+            return hdr;
+        }
+        else
+        {
+            return {};
+        }
     }
 };
 
@@ -1374,11 +1501,11 @@ struct NodeInfoMessage
         encoder.addBytes(runtime_environment_description);
         encoder.fillUpToOffset(360);
 
-        assert(encoder.getStreamLength() == MinEncodedSize);
+        assert(encoder.getOffset() == MinEncodedSize);
         encoder.addBytes(certificate_of_authenticity);
-        assert(encoder.getStreamLength() >= MinEncodedSize);
-        assert(encoder.getStreamLength() <= MaxEncodedSize);
-        assert(encoder.getStreamLength() ==  MinEncodedSize + certificate_of_authenticity.size());
+        assert(encoder.getOffset() >= MinEncodedSize);
+        assert(encoder.getOffset() <= MaxEncodedSize);
+        assert(encoder.getOffset() ==  MinEncodedSize + certificate_of_authenticity.size());
     }
 
     /**
@@ -1391,6 +1518,81 @@ struct NodeInfoMessage
         MessageBuffer<MaxEncodedSize> out;
         encode(std::back_inserter(out));
         return out;
+    }
+
+    template <typename InputIterator>
+    static std::optional<NodeInfoMessage> tryDecode(InputIterator begin, InputIterator end)
+    {
+        const auto header = MessageHeader::tryDecode(begin, end);
+        if (!header || (header->message_id != MessageID::NodeInfo))
+        {
+            return {};
+        }
+
+        presentation::StreamDecoder decoder(begin + MessageHeader::Size, end);
+        if ((decoder.getRemainingLength() < MinEncodedSize) ||
+            (decoder.getRemainingLength() > MaxEncodedSize))
+        {
+            return {};
+        }
+
+        NodeInfoMessage msg;
+
+        msg.software_version.image_crc              = decoder.fetchU64();
+        msg.software_version.vcs_commit_id          = decoder.fetchU32();
+        msg.software_version.build_timestamp_utc    = decoder.fetchU32();
+        msg.software_version.major                  = decoder.fetchU8();
+        msg.software_version.minor                  = decoder.fetchU8();
+
+        msg.hardware_version.major = decoder.fetchU8();
+        msg.hardware_version.minor = decoder.fetchU8();
+
+        {
+            const std::uint8_t flags = decoder.fetchU8();
+
+            if ((flags & 1) == 0)
+            {
+                msg.software_version.image_crc.reset();
+            }
+
+            msg.software_version.release_build = (flags & 2) != 0;
+            msg.software_version.dirty_build   = (flags & 4) != 0;
+        }
+
+        switch (decoder.fetchU8())
+        {
+        case std::uint8_t(Mode::Normal):
+        {
+            msg.mode = Mode::Normal;
+            break;
+        }
+        case std::uint8_t(Mode::Bootloader):
+        {
+            msg.mode = Mode::Bootloader;
+            break;
+        }
+        default:
+        {
+            return {};
+        }
+        }
+
+        decoder.skipUpToOffset(24);
+        decoder.fetchBytes(msg.globally_unique_id.begin(),
+                           msg.globally_unique_id.end());
+
+        assert(decoder.getOffset() == 40);
+        decoder.fetchASCIIString(msg.node_name);
+        decoder.skipUpToOffset(120);
+        decoder.fetchASCIIString(msg.node_description);
+        decoder.skipUpToOffset(200);
+        decoder.fetchASCIIString(msg.build_environment_description);
+        decoder.skipUpToOffset(280);
+        decoder.fetchASCIIString(msg.runtime_environment_description);
+        decoder.skipUpToOffset(360);
+        decoder.fetchBytes(std::back_inserter(msg.certificate_of_authenticity),
+                           decoder.getRemainingLength());
+        return msg;
     }
 };
 
