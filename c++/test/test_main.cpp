@@ -332,7 +332,7 @@ TEST_CASE("ParserReset")
 
 
 template <std::size_t Size>
-inline bool doesEmitterOutputMatch(transport::Emitter encoder,
+inline bool doesEmitterOutputMatch(transport::BufferedEmitter encoder,
                                    const std::array<std::uint8_t, Size>& output)
 {
     std::size_t index = 0;
@@ -352,19 +352,19 @@ inline bool doesEmitterOutputMatch(transport::Emitter encoder,
 }
 
 
-TEST_CASE("EmitterSimple")
+TEST_CASE("BufferedEmitterSimple")
 {
     using transport::FrameDelimiter;
     using transport::EscapeCharacter;
 
-    REQUIRE(doesEmitterOutputMatch(transport::Emitter(123, "", 0),
+    REQUIRE(doesEmitterOutputMatch(transport::BufferedEmitter(123, "", 0),
                                    makeArray(FrameDelimiter, 123, 0x67, 0xAC, 0x6C, 0xBA, FrameDelimiter)));
 
-    REQUIRE(doesEmitterOutputMatch(transport::Emitter(90, makeArray(42, 12, 34, 56, 78)),
+    REQUIRE(doesEmitterOutputMatch(transport::BufferedEmitter(90, makeArray(42, 12, 34, 56, 78)),
                                    makeArray(FrameDelimiter, 42, 12, 34, 56, 78, 90, 0xCE, 0x4E, 0x88, 0xBC,
                                              FrameDelimiter)));
 
-    REQUIRE(doesEmitterOutputMatch(transport::Emitter(EscapeCharacter, makeArray(FrameDelimiter)),
+    REQUIRE(doesEmitterOutputMatch(transport::BufferedEmitter(EscapeCharacter, makeArray(FrameDelimiter)),
                                    makeArray(FrameDelimiter,
                                              EscapeCharacter, ~FrameDelimiter,
                                              EscapeCharacter, ~EscapeCharacter,
@@ -378,7 +378,7 @@ inline bool validateEncodeDecodeLoop(transport::Parser<ParserBufferSize>& parser
                                      const FramePayloadContainer& frame_payload,
                                      const ExtraneousDataContainer& extraneous_data)
 {
-    transport::Emitter encoder(frame_type_code, frame_payload.data(), frame_payload.size());
+    transport::BufferedEmitter encoder(frame_type_code, frame_payload.data(), frame_payload.size());
     transport::ParserOutput out;
 
     while (!encoder.isFinished())

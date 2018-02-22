@@ -31,8 +31,10 @@
 #endif
 
 #include <type_traits>
+#include <functional>
 #include <algorithm>
 #include <optional>
+#include <iterator>
 #include <variant>
 #include <cstring>
 #include <cassert>
@@ -403,8 +405,10 @@ public:
 
 /**
  * Simple byte-by-byte data encoder/emitter.
+ * This version uses an underlying buffer, and returns encoded data byte-by-byte.
+ * There is also a more complex but more efficient version, see @ref StreamEmitter.
  */
-class Emitter
+class BufferedEmitter
 {
     enum class State : std::uint8_t
     {
@@ -467,9 +471,9 @@ public:
      *
      * @param payload_size          Length of the frame payload.
      */
-    Emitter(std::uint8_t frame_type_code,
-            const void* payload_ptr,
-            std::size_t payload_size) :
+    BufferedEmitter(std::uint8_t frame_type_code,
+                    const void* payload_ptr,
+                    std::size_t payload_size) :
         type_code_(frame_type_code),
         remaining_bytes_(payload_size),
         next_byte_ptr_(static_cast<const std::uint8_t*>(payload_ptr))
@@ -499,12 +503,12 @@ public:
                                          (sizeof(T) > 0) &&
                                          !std::has_virtual_destructor<T>::value &&
                                           std::is_trivially_copyable<T>::value>>
-    Emitter(std::uint8_t frame_type_code,
-            const T& payload_object_ref,
-            std::size_t payload_size = sizeof(T)) :
-        Emitter(frame_type_code,
-                static_cast<const void*>(&payload_object_ref),
-                payload_size)
+    BufferedEmitter(std::uint8_t frame_type_code,
+                    const T& payload_object_ref,
+                    std::size_t payload_size = sizeof(T)) :
+        BufferedEmitter(frame_type_code,
+                        static_cast<const void*>(&payload_object_ref),
+                        payload_size)
     {
         assert(payload_size <= sizeof(T));
     }
@@ -595,6 +599,125 @@ public:
         // Stuff the output after the packet is finished with frame delimiters.
         return FrameDelimiter;
     }
+};
+
+/**
+ * This emitter is a bit trickier than @ref BufferedEmitter, use with care!
+ * It works through a SEQUENTIAL ACCESS OUTPUT ITERATOR. When a byte of data is written into the iterator,
+ * the emitter automatically encodes it and sends it over the wire via the provided data sink (output callback).
+ * This way, the latency is virtually zero, memory usage is minimal, and no data buffers are necessary.
+ * The class automatically finalizes the emitted message when the instance is destroyed. This is why the class
+ * can't be copyable - that would break the RAII paradigm. An attempt to copy an instance of it will trigger a
+ * compile-time error, so it is safe in this regard.
+ */
+class StreamEmitter
+{
+    const std::uint8_t frame_type_code_;
+    const std::function<void (std::uint8_t)> sink_;
+    mutable CRCComputer crc_;
+
+    void emit(const std::uint8_t byte) const
+    {
+        if ((byte == FrameDelimiter) || (byte == EscapeCharacter))
+        {
+            sink_(EscapeCharacter);
+            sink_(std::uint8_t(~byte));
+        }
+        else
+        {
+            sink_(byte);
+        }
+
+        crc_.add(byte);
+    }
+
+public:
+    /**
+     * The proxy output iterator that is actually used to emit data.
+     * Note that it must be copyable, unlike the class that constructs it!
+     */
+    class OutputIterator
+    {
+        friend class StreamEmitter;
+
+        const StreamEmitter* owner_;
+
+        explicit OutputIterator(const StreamEmitter* master) : owner_(master) { }
+
+    public:
+        /**
+         * Parts of the Iterator concept.
+         * http://en.cppreference.com/w/cpp/header/iterator
+         * Note that std::iterator<> has been deprecated in C++17.
+         */
+        using iterator_category = std::output_iterator_tag;
+        using value_type        = std::uint8_t;
+        using difference_type   = void;
+        using pointer           = void;
+        using reference         = void;
+
+        /**
+         * Assignment to the output iterator invokes the write-out operation and the state machine update.
+         */
+        OutputIterator& operator=(std::uint8_t byte)
+        {
+            owner_->emit(byte);
+            return *this;
+        }
+
+        /**
+         * These are not defined for this type of iterator, but we have to provide the operators nevertheless.
+         * Semantically this is similar to std::back_insert_iterator<>.
+         */
+        OutputIterator& operator*() { return *this; }
+        OutputIterator& operator++() { return *this; }
+        OutputIterator operator++(int) const { return *this; }
+    };
+
+    /**
+     * Note that this is a RAII-type, so construction and destruction have significant side effects.
+     * The preferred pattern is as follows:
+     *
+     *      encode(StreamEmitter(frame_type_code, my_callback).begin());
+     *
+     * In this way, usage is simple and the transfer is finalized as soon as possible.
+     * More on lifetimes: https://stackoverflow.com/questions/584824/guaranteed-lifetime-of-temporary-in-c
+     */
+    StreamEmitter(std::uint8_t frame_type_code,
+                  const std::function<void (std::uint8_t)>& sink) :
+        frame_type_code_(frame_type_code),
+        sink_(sink)
+    {
+        sink_(FrameDelimiter);
+    }
+
+    /**
+     * Finalizes the transfer.
+     * Make sure that the destructor is invoked before the next transfer is initiated!
+     */
+    ~StreamEmitter()
+    {
+        emit(frame_type_code_);
+        emit(std::uint8_t(crc_.get() >> 0));
+        emit(std::uint8_t(crc_.get() >> 8));
+        emit(std::uint8_t(crc_.get() >> 16));
+        emit(std::uint8_t(crc_.get() >> 24));
+        sink_(FrameDelimiter);
+    }
+
+    /**
+     * Returns an iterator object that can be used to emit data via this emitter.
+     */
+    OutputIterator begin() const
+    {
+        return OutputIterator(this);
+    }
+
+    /**
+     * This is a RAII class with strong side effects, therefore it is non-copyable.
+     */
+    StreamEmitter(const StreamEmitter&) = delete;
+    StreamEmitter& operator=(const StreamEmitter&) = delete;
 };
 
 } // namespace transport
