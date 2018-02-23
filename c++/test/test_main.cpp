@@ -1084,7 +1084,10 @@ TEST_CASE("StreamDecoder")
                 str.push_back(char(char_byte));
             }
             encoder.addBytes(str);
-            encoder.addI8(0);
+            if (str.size() < str.capacity())        // Decoder will ignore the null terminator if at full capacity
+            {
+                encoder.addI8(0);                   // ...which is by design.
+            }
             util::FixedCapacityString<65535> out = "Some garbage";
             decoder.fetchASCIIString(out);
             REQUIRE(out == str);
