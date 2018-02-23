@@ -1466,8 +1466,8 @@ using MessageBuffer = util::FixedCapacityVector<std::uint8_t, MaxMessageSizeNotI
  */
 struct NodeInfoMessage
 {
-    static constexpr std::size_t MaxEncodedSize = 615;
     static constexpr std::size_t MinEncodedSize = 360;
+    static constexpr std::size_t MaxEncodedSize = 615;
 
     struct SoftwareVersion
     {
@@ -1648,6 +1648,102 @@ struct NodeInfoMessage
         decoder.fetchBytes(std::back_inserter(msg.certificate_of_authenticity),
                            decoder.getRemainingLength());
         return msg;
+    }
+};
+
+/**
+ * This is not a message class. Rather, it is a base class for the following message classes defined below.
+ * It can be used by the application as well, but it can't be sent or received over the wire.
+ * Use the derived classes instead.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u8              type_id         Type of the value contained in this register.
+ *      1       u8              name_length     Length of the next field, also (offset_of_the_payload - 2).
+ *      2       u8[<=93]        name            ASCII name, not terminated - see the previous field.
+ *      2...95  u8[<=256]       encoded_payload Array of values whose types are defined by type_id.
+ *  -----------------------------------------------------------------------------------------------
+ *    <=351
+ */
+struct RegisterData
+{
+    static constexpr std::size_t MinEncodedSize = 95;
+    static constexpr std::size_t MaxEncodedSize = 351;
+
+    using Name = util::FixedCapacityString<93>;
+
+    using Empty = std::monostate;
+    using String = util::FixedCapacityString<256>;
+    struct Unstructured : util::FixedCapacityVector<std::uint8_t,  256> { };
+    struct Boolean : util::FixedCapacityVector<bool, 256> { };
+    // Signed integers
+    using I64 = util::FixedCapacityVector<std::int64_t,  32>;
+    using I32 = util::FixedCapacityVector<std::int32_t,  64>;
+    using I16 = util::FixedCapacityVector<std::int16_t,  128>;
+    using I8  = util::FixedCapacityVector<std::int8_t,   256>;
+    // Unsigned integers
+    using U64 = util::FixedCapacityVector<std::uint64_t, 32>;
+    using U32 = util::FixedCapacityVector<std::uint32_t, 64>;
+    using U16 = util::FixedCapacityVector<std::uint16_t, 128>;
+    using U8  = util::FixedCapacityVector<std::uint8_t,  256>;
+    // IEEE754 floating point
+    using F64 = util::FixedCapacityVector<double, 32>;
+    using F32 = util::FixedCapacityVector<float,  64>;
+
+    using Value = std::variant<
+        Empty,              ///< No value is provided
+        String,             ///< UTF-8 encoded string of text
+        Unstructured,       ///< Raw unstructured bytes
+        Boolean,            ///< One byte per value; 0 - false, 1...255 - true
+        // Signed integers
+        I64,
+        I32,
+        I16,
+        I8,
+        // Unsigned integers
+        U64,
+        U32,
+        U16,
+        U8,
+        // IEEE754 floating point
+        F64,
+        F32
+    >;
+
+    Name name;
+    Value value;
+
+    template <typename T> [[nodiscard]] bool is() const { return std::holds_alternative<T>(value); }
+
+    template <typename T> [[nodiscard]]       T* as()       { return std::get_if<T>(value); }
+    template <typename T> [[nodiscard]] const T* as() const { return std::get_if<T>(value); }
+
+    template <typename T, typename... Args>
+    T& emplace(Args&&... args)
+    {
+        return value.emplace<T>(std::forward<Args>(args)...);
+    }
+
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient.
+     */
+    template <typename OutputIterator>
+    void encode(OutputIterator begin) const
+    {
+        (void) begin;
+    }
+
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    MessageBuffer<MaxEncodedSize> encode() const
+    {
+        MessageBuffer<MaxEncodedSize> out;
+        encode(std::back_inserter(out));
+        return out;
     }
 };
 
