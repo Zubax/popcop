@@ -35,23 +35,18 @@ matrix:
         - CC=gcc-7 && CXX=g++-7 && cd c++/test/ && cmake . && make
         - ./popcop_test
 
-#
-# Clang is commented out - it can't compile Popcop because the compiler is broken.
-# See the bug report here: https://bugs.llvm.org/show_bug.cgi?id=31852
-# This section should be uncommented when a newer version of Clang is available with this bug fixed.
-#
-#    - language: cpp
-#      addons:
-#        apt:
-#          sources:
-#            - ubuntu-toolchain-r-test
-#            - llvm-toolchain-trusty-5.0
-#          packages:
-#            - clang-5.0
-#            - libstdc++-7-dev   # This package contains the C++ standard library used by Clang-5.0
-#      script:
-#        - clang++-5.0 -E -x c++ - -v < /dev/null    # Print the Clang configuration for troubleshooting purposes
-#        - cd c++/test/
-#        - cmake -DCMAKE_C_COMPILER=clang-5.0 -DCMAKE_CXX_COMPILER=clang++-5.0 .
-#        - make
-#        - ./popcop_test
+   - language: cpp
+     addons:
+       apt:
+         sources:
+           - ubuntu-toolchain-r-test
+           - llvm-toolchain-trusty-5.0
+         packages:
+           - clang-5.0
+           - libstdc++-7-dev   # This package contains the C++ standard library used by Clang-5.0
+     script:
+       - clang++-5.0 -E -x c++ - -v < /dev/null    # Print the Clang configuration for troubleshooting purposes
+       - cd c++/test/
+       - cmake -DCMAKE_C_COMPILER=clang-5.0 -DCMAKE_CXX_COMPILER=clang++-5.0 .
+       - make
+       - ./popcop_test
