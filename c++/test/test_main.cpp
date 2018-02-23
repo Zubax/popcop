@@ -449,6 +449,12 @@ inline std::uint8_t getRandomByte()
 }
 
 
+inline bool getRandomBit()
+{
+    return getRandomByte() % 2 == 0;
+}
+
+
 inline std::vector<std::uint8_t> getRandomNumberOfRandomBytes(const bool allow_frame_delimiters = true)
 {
     std::vector<std::uint8_t> o;
@@ -945,10 +951,9 @@ TEST_CASE("StreamDecoder")
     REQUIRE(decoder.getRemainingLength() == BufferSize);
     std::unordered_map<std::uint8_t, std::uint64_t> stats;
 
-    for (unsigned i = 0; i < (vec->capacity() / 8); i++)
+    while ((vec->size() + 65536) < vec->capacity())
     {
-        const std::uint8_t tag = std::uint8_t(getRandomByte() % 10U);
-
+        const std::uint8_t tag = std::uint8_t(getRandomByte() % 13U);
         stats[tag]++;
         switch (tag)
         {
@@ -1034,6 +1039,56 @@ TEST_CASE("StreamDecoder")
             {
                 REQUIRE(std::isnan(decoder.fetchF64()));
             }
+            break;
+        }
+        case 10:
+        {
+            const auto depth = getRandomByte();
+            const auto fill = getRandomByte();
+            encoder.fillUpToOffset(encoder.getOffset() + depth, fill);
+            util::FixedCapacityVector<std::uint8_t, 255> out;
+            if (getRandomBit())
+            {
+                decoder.fetchBytes(std::back_inserter(out), depth);
+            }
+            else
+            {
+                out.resize(depth);
+                decoder.fetchBytes(out.begin(), out.end());
+            }
+
+            REQUIRE(out.size() == depth);
+            for (unsigned i = 0; i < depth; i++)
+            {
+                REQUIRE(out[i] == fill);
+            }
+            break;
+        }
+        case 11:
+        {
+            const auto offset = encoder.getOffset() + getRandomByte();
+            encoder.fillUpToOffset(offset);
+            decoder.skipUpToOffset(offset);
+            REQUIRE(decoder.getOffset() == encoder.getOffset());
+            break;
+        }
+        case 12:
+        {
+            util::FixedCapacityString<65535> str;
+            const std::uint16_t str_length = getRandomNumber<2, false, false>();
+            for (unsigned i = 0; i < str_length; i++)
+            {
+                const auto char_byte = std::max(1U, getRandomByte() & 0b0111'1111U);
+                assert(char_byte > 0);
+                assert(char_byte < 128);
+                str.push_back(char(char_byte));
+            }
+            encoder.addBytes(str);
+            encoder.addI8(0);
+            util::FixedCapacityString<65535> out = "Some garbage";
+            decoder.fetchASCIIString(out);
+            REQUIRE(out == str);
+            REQUIRE(decoder.getOffset() == encoder.getOffset());
             break;
         }
         default:

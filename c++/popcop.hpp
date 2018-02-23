@@ -1038,6 +1038,23 @@ public:
         len_ = 0;
     }
 
+    void resize(const std::size_t count, const T& fill_value = T{})
+    {
+        assert(count <= Capacity);
+        if (count < len_)
+        {
+            len_ = count;
+        }
+        else
+        {
+            while (count > len_)
+            {
+                push_back(fill_value);
+            }
+        }
+        assert(size() == count);    // Will fail if count > Capacity
+    }
+
     void push_back(const T& c)
     {
         if (len_ < Capacity)
