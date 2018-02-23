@@ -1173,6 +1173,24 @@ public:
     template <typename T> void addI32(const T& x) { addSignedInteger<4>(x); }
     template <typename T> void addI64(const T& x) { addSignedInteger<8>(x); }
 
+    void addF32(const float value)
+    {
+        static_assert(sizeof(float) == 4);
+        std::uint32_t u = 0;
+        static_assert(sizeof(u) == sizeof(value));
+        std::memcpy(&u, &value, sizeof(u));
+        addU32(u);
+    }
+
+    void addF64(const double value)
+    {
+        static_assert(sizeof(double) == 8);
+        std::uint64_t u = 0;
+        static_assert(sizeof(u) == sizeof(value));
+        std::memcpy(&u, &value, sizeof(u));
+        addU64(u);
+    }
+
     void fillUpToOffset(const std::size_t offset, const std::uint8_t fill_value = 0)
     {
         assert(length_ <= offset);
@@ -1235,7 +1253,7 @@ public:
     template <std::size_t NumBytes>
     auto fetchSignedInteger()
     {
-        const auto u = fetchUnsignedInteger();
+        const auto u = fetchUnsignedInteger<NumBytes>();
         std::make_signed_t<typename UnsignedTypeSelector<NumBytes>::T> s = 0;
         static_assert(sizeof(s) == sizeof(u));
         std::memcpy(&s, &u, sizeof(s));         // Remember about strict aliasing!
@@ -1251,6 +1269,26 @@ public:
     auto fetchI16() { return fetchSignedInteger<2>(); }
     auto fetchI32() { return fetchSignedInteger<4>(); }
     auto fetchI64() { return fetchSignedInteger<8>(); }
+
+    float fetchF32()
+    {
+        static_assert(sizeof(float) == 4);
+        const auto u = fetchU32();
+        float out{};
+        static_assert(sizeof(u) == sizeof(out));
+        std::memcpy(&out, &u, sizeof(out));
+        return out;
+    }
+
+    double fetchF64()
+    {
+        static_assert(sizeof(double) == 8);
+        const auto u = fetchU64();
+        double out{};
+        static_assert(sizeof(u) == sizeof(out));
+        std::memcpy(&out, &u, sizeof(out));
+        return out;
+    }
 
     template <typename OutputByteIterator, typename = std::enable_if_t<!std::is_integral_v<OutputByteIterator>>>
     void fetchBytes(OutputByteIterator out_begin, const OutputByteIterator out_end)

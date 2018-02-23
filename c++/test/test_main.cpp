@@ -470,6 +470,38 @@ inline std::vector<std::uint8_t> getRandomNumberOfRandomBytes(const bool allow_f
 }
 
 
+template <std::size_t NumBytes, bool IsSigned, bool IsFloating>
+inline auto getRandomNumber()
+{
+    static_assert((NumBytes == 1) || (NumBytes == 2) || (NumBytes == 4) || (NumBytes == 8));
+    static_assert(IsFloating ? ((NumBytes == 4) || (NumBytes == 8)) && IsSigned : true);
+
+    using Unsigned = std::conditional_t<
+        NumBytes == 1, std::uint8_t,
+        std::conditional_t<
+            NumBytes == 2, std::uint16_t,
+            std::conditional_t<
+                NumBytes == 4, std::uint32_t,
+                std::conditional_t<
+                    NumBytes == 8, std::uint64_t,
+                    void>>>>;
+    using Float = std::conditional_t<NumBytes == 4, float, double>;
+    using ValueType = std::conditional_t<IsFloating, Float,
+        std::conditional_t<IsSigned, std::make_signed_t<Unsigned>, Unsigned>>;
+
+    std::array<std::uint8_t, NumBytes> bytes{};
+    for (auto& b : bytes)
+    {
+        b = getRandomByte();
+    }
+
+    static_assert(sizeof(ValueType) == NumBytes);
+    ValueType value{};
+    std::memcpy(&value, bytes.data(), sizeof(ValueType));
+    return value;
+}
+
+
 TEST_CASE("EmitterParserLoop")
 {
     std::srand(unsigned(std::time(nullptr)));
@@ -898,6 +930,134 @@ TEST_CASE("StreamEncoder")
     REQUIRE(vec[36] == 0b00000000);
     REQUIRE(vec[37] == 0b00000000);
     REQUIRE(vec[38] == 0b00000000);
+}
+
+
+TEST_CASE("StreamDecoder")
+{
+    constexpr auto BufferSize = 10000000;
+
+    auto vec = std::make_shared<util::FixedCapacityVector<std::uint8_t, BufferSize>>();
+    presentation::StreamEncoder encoder(std::back_inserter(*vec));
+    presentation::StreamDecoder decoder(vec->begin(),
+                                        vec->begin() + vec->capacity());
+    REQUIRE(decoder.getOffset() == 0);
+    REQUIRE(decoder.getRemainingLength() == BufferSize);
+    std::unordered_map<std::uint8_t, std::uint64_t> stats;
+
+    for (unsigned i = 0; i < (vec->capacity() / 8); i++)
+    {
+        const std::uint8_t tag = std::uint8_t(getRandomByte() % 10U);
+
+        stats[tag]++;
+        switch (tag)
+        {
+        case 0:
+        {
+            const auto value = getRandomNumber<1, false, false>();
+            encoder.addU8(value);
+            REQUIRE(decoder.fetchU8() == value);
+            break;
+        }
+        case 1:
+        {
+            const auto value = getRandomNumber<2, false, false>();
+            encoder.addU16(value);
+            REQUIRE(decoder.fetchU16() == value);
+            break;
+        }
+        case 2:
+        {
+            const auto value = getRandomNumber<4, false, false>();
+            encoder.addU32(value);
+            REQUIRE(decoder.fetchU32() == value);
+            break;
+        }
+        case 3:
+        {
+            const auto value = getRandomNumber<8, false, false>();
+            encoder.addU64(value);
+            REQUIRE(decoder.fetchU64() == value);
+            break;
+        }
+        case 4:
+        {
+            const auto value = getRandomNumber<1, true, false>();
+            encoder.addI8(value);
+            REQUIRE(decoder.fetchI8() == value);
+            break;
+        }
+        case 5:
+        {
+            const auto value = getRandomNumber<2, true, false>();
+            encoder.addI16(value);
+            REQUIRE(decoder.fetchI16() == value);
+            break;
+        }
+        case 6:
+        {
+            const auto value = getRandomNumber<4, true, false>();
+            encoder.addI32(value);
+            REQUIRE(decoder.fetchI32() == value);
+            break;
+        }
+        case 7:
+        {
+            const auto value = getRandomNumber<8, true, false>();
+            encoder.addI64(value);
+            REQUIRE(decoder.fetchI64() == value);
+            break;
+        }
+        case 8:
+        {
+            const auto value = getRandomNumber<4, true, true>();
+            encoder.addF32(value);
+            if (!std::isnan(value))
+            {
+                REQUIRE(decoder.fetchF32() == Approx(value));
+            }
+            else
+            {
+                REQUIRE(std::isnan(decoder.fetchF32()));
+            }
+            break;
+        }
+        case 9:
+        {
+            const auto value = getRandomNumber<8, true, true>();
+            encoder.addF64(value);
+            if (!std::isnan(value))
+            {
+                REQUIRE(decoder.fetchF64() == Approx(value));
+            }
+            else
+            {
+                REQUIRE(std::isnan(decoder.fetchF64()));
+            }
+            break;
+        }
+        default:
+        {
+            assert(false);
+        }
+        }
+    }
+
+    std::cout << "decoder.getOffset()          = " << decoder.getOffset() << std::endl;
+    std::cout << "decoder.getRemainingLength() = " << decoder.getRemainingLength() << std::endl;
+
+    REQUIRE(decoder.getOffset() == encoder.getOffset());
+    REQUIRE(encoder.getOffset() == vec->size());
+    REQUIRE(decoder.getRemainingLength() == (vec->capacity() - vec->size()));
+
+    std::cout << "Decoder test type tag usage:" << std::endl;
+    std::uint64_t total = 0;
+    for (auto p : stats)
+    {
+        total += p.second;
+        std::cout << int(p.first) << ": " << p.second << std::endl;
+    }
+    std::cout << "Total: " << total << std::endl;
 }
 
 
