@@ -941,7 +941,7 @@ TEST_CASE("StreamEncoder")
 
 TEST_CASE("StreamDecoder")
 {
-    constexpr auto BufferSize = 10000000;
+    constexpr auto BufferSize = 400'000'000;    ///< This might be too much for some systems?
 
     auto vec = std::make_shared<util::FixedCapacityVector<std::uint8_t, BufferSize>>();
     presentation::StreamEncoder encoder(std::back_inserter(*vec));
@@ -1227,5 +1227,50 @@ TEST_CASE("NodeInfoMessage")
     const auto m2 = standard::NodeInfoMessage::tryDecode(carefully_crafted_message.begin(),
                                                          carefully_crafted_message.end());
     REQUIRE(m2);
-    // TODO: test this
+    std::cout << "After reparsing:" << std::endl;
+    printHexDump(m2->encode());
+    REQUIRE(m2->encode() == carefully_crafted_message);
+
+    {
+        auto ccm = carefully_crafted_message;
+
+        // Change mode
+        ccm[21 + standard::MessageHeader::Size] = std::uint8_t(standard::NodeInfoMessage::Mode::Bootloader);
+        REQUIRE(standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.end())->mode ==
+                    standard::NodeInfoMessage::Mode::Bootloader);
+
+        // Use invalid mode
+        ccm[21 + standard::MessageHeader::Size] = 123;
+        REQUIRE(!standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.end()));  // Not parsed
+    }
+
+    {
+        auto ccm = carefully_crafted_message;
+        ccm[0] = 123;       // Different message ID
+        REQUIRE(!standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.end()));  // Not parsed
+    }
+
+    {
+        auto ccm = carefully_crafted_message;
+        REQUIRE(!standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.begin() + 360));  // Too short
+        REQUIRE(!standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.begin() + 700));  // Too long
+        REQUIRE(standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.end()));           // Just right
+    }
+
+    {
+        auto ccm = carefully_crafted_message;
+        // Default
+        auto m = standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.end());
+        REQUIRE(m);
+        REQUIRE(m->software_version.image_crc.has_value());
+        REQUIRE(m->software_version.release_build);
+        REQUIRE(m->software_version.dirty_build);
+        // Erase flags
+        ccm[20 + standard::MessageHeader::Size] = 0;
+        m = standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.end());
+        REQUIRE(m);
+        REQUIRE(!m->software_version.image_crc.has_value());
+        REQUIRE(!m->software_version.release_build);
+        REQUIRE(!m->software_version.dirty_build);
+    }
 }
