@@ -987,10 +987,18 @@ public:
 
 private:
     std::size_t len_ = 0;
-    T buf_[Capacity]{};
+    T buf_[Capacity];       // Note that we don't zero-initialize, just like std containers
 
 public:
     FixedCapacityVector() = default;
+
+    explicit FixedCapacityVector(std::initializer_list<T> values)
+    {
+        for (const auto& v : values)
+        {
+            push_back(v);
+        }
+    }
 
     template <typename InputIterator, typename = std::enable_if_t<!std::is_integral_v<InputIterator>>>
     FixedCapacityVector(InputIterator begin, const InputIterator end) // NOLINT
@@ -1506,7 +1514,8 @@ struct NodeInfoMessage
 
     /**
      * Encodes the message into the provided sequential iterator.
-     * The iterator can encode and emit the message on the fly - that would be highly efficient.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
      */
     template <typename OutputIterator>
     void encode(OutputIterator begin) const
@@ -1718,15 +1727,29 @@ struct RegisterData
     template <typename T> [[nodiscard]]       T* as()       { return std::get_if<T>(value); }
     template <typename T> [[nodiscard]] const T* as() const { return std::get_if<T>(value); }
 
-    template <typename T, typename... Args>
-    T& emplace(Args&&... args)
+    /**
+     * Encodes the message into the provided sequential iterator without constructing an object first.
+     * This version is a highly speed-optimized shortcut for simple usage scenarios.
+     * Normally you would want to construct an object and then call @ref encode() on it,
+     * rather than using this particular function.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     */
+    template <typename ValueType, typename OutputIterator, typename... ValueCtorArgs>
+    static void fastEncode(OutputIterator begin, const char* name, ValueCtorArgs&&... args)
     {
-        return value.emplace<T>(std::forward<Args>(args)...);
+        (void) name;
+
+        {
+            const ValueType value(std::forward<ValueCtorArgs>(args)...);
+            (void) value;
+        }
     }
 
     /**
      * Encodes the message into the provided sequential iterator.
-     * The iterator can encode and emit the message on the fly - that would be highly efficient.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
      */
     template <typename OutputIterator>
     void encode(OutputIterator begin) const

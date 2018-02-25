@@ -837,16 +837,30 @@ TEST_CASE("FixedCapacityVector")
     REQUIRE((vec == vec_copy) == false);
     REQUIRE((vec_copy == vec) == false);
 
-    util::FixedCapacityVector<std::int32_t, 6> vec3(5, 123);
-    REQUIRE(!vec3.empty());
-    REQUIRE(vec3.capacity() == 6);
-    REQUIRE(vec3.max_size() == 6);
-    REQUIRE(vec3.size() == 5);
-    REQUIRE(vec3[0] == 123);
-    REQUIRE(vec3[1] == 123);
-    REQUIRE(vec3[2] == 123);
-    REQUIRE(vec3[3] == 123);
-    REQUIRE(vec3[4] == 123);
+    {
+        util::FixedCapacityVector<std::int32_t, 6> vec3(5, 123);
+        REQUIRE(!vec3.empty());
+        REQUIRE(vec3.capacity() == 6);
+        REQUIRE(vec3.max_size() == 6);
+        REQUIRE(vec3.size() == 5);
+        REQUIRE(vec3[0] == 123);
+        REQUIRE(vec3[1] == 123);
+        REQUIRE(vec3[2] == 123);
+        REQUIRE(vec3[3] == 123);
+        REQUIRE(vec3[4] == 123);
+    }
+
+    {
+        util::FixedCapacityVector<std::int8_t, 7> vec4({1, 2, 3, 4});
+        REQUIRE(!vec4.empty());
+        REQUIRE(vec4.capacity() == 7);
+        REQUIRE(vec4.max_size() == 7);
+        REQUIRE(vec4.size() == 4);
+        REQUIRE(vec4[0] == 1);
+        REQUIRE(vec4[1] == 2);
+        REQUIRE(vec4[2] == 3);
+        REQUIRE(vec4[3] == 4);
+    }
 }
 
 
