@@ -965,6 +965,8 @@ TEST_CASE("StreamDecoder")
     REQUIRE(decoder.getRemainingLength() == BufferSize);
     std::unordered_map<std::uint8_t, std::uint64_t> stats;
 
+    std::cout << "Running randomized stream decoder test with " << BufferSize << " bytes of data..." << std::endl;
+
     while ((vec->size() + 65536) < vec->capacity())
     {
         const std::uint8_t tag = std::uint8_t(getRandomByte() % 13U);
@@ -1115,6 +1117,7 @@ TEST_CASE("StreamDecoder")
         }
     }
 
+    std::cout << "Randomized stream decoder test has finished running." << std::endl;
     std::cout << "decoder.getOffset()          = " << decoder.getOffset() << std::endl;
     std::cout << "decoder.getRemainingLength() = " << decoder.getRemainingLength() << std::endl;
 
@@ -1293,7 +1296,7 @@ TEST_CASE("NodeInfoMessage")
 }
 
 
-TEST_CASE("RegisterData")
+TEST_CASE("RegisterDataEncoding")
 {
     using standard::MessageID;
     using standard::RegisterData;
@@ -1305,6 +1308,9 @@ TEST_CASE("RegisterData")
     REQUIRE(msg.as<RegisterData::Empty>() != nullptr);
     REQUIRE(msg.as<RegisterData::String>() == nullptr);
 
+    REQUIRE(msg == RegisterData());
+    REQUIRE((msg != RegisterData()) == false);
+
     {
         const auto encoded = msg.encode(MessageID::RegisterDataRequest);
         REQUIRE(encoded.size() == 10);
@@ -1314,6 +1320,9 @@ TEST_CASE("RegisterData")
     }
 
     msg.name = "1234567";
+
+    REQUIRE(msg != RegisterData());
+    REQUIRE((msg == RegisterData()) == false);
 
     {
         const auto encoded = msg.encode(MessageID::RegisterDataResponse);
@@ -1470,4 +1479,182 @@ TEST_CASE("RegisterData")
         REQUIRE(encoded.size() == reference.size());
         REQUIRE(encoded == reference);
     }
+}
+
+
+template <std::size_t Capacity>
+static inline void fillRandomString(util::FixedCapacityString<Capacity>& out_string)
+{
+    out_string.clear();
+    std::size_t size = (std::size_t(getRandomByte()) * std::size_t(getRandomByte())) % Capacity;
+    while (size --> 0)
+    {
+        out_string.push_back(char((getRandomByte() % 94) + 33));
+    }
+}
+
+
+template <typename T, std::size_t Capacity>
+static void fillRandomVector(util::FixedCapacityVector<T, Capacity>& out_vector)
+{
+    out_vector.clear();
+    std::size_t size = (std::size_t(getRandomByte()) * std::size_t(getRandomByte())) % Capacity;
+    out_vector.resize(size);
+    for (auto& x : out_vector)
+    {
+        x = getRandomNumber<sizeof(T), std::is_signed_v<T>, std::is_floating_point_v<T>>();
+    }
+}
+
+
+template <std::uint8_t CandidateVariantTypeIndex = 0>
+static void fillRandomRegisterValue(standard::RegisterData::Value& value, const std::uint8_t variant_type_index)
+{
+    using standard::RegisterData;
+    if constexpr (CandidateVariantTypeIndex < std::variant_size_v<standard::RegisterData::Value>)
+    {
+        if (CandidateVariantTypeIndex == variant_type_index)
+        {
+            using Type = std::variant_alternative_t<CandidateVariantTypeIndex, standard::RegisterData::Value>;
+            auto& ref = value.template emplace<CandidateVariantTypeIndex>();
+            if constexpr (std::is_same_v<Type, std::monostate>)
+            {
+                ;   // Nothing to do
+            }
+            else if constexpr (std::is_same_v<Type, RegisterData::String>)
+            {
+                fillRandomString(ref);
+            }
+            else
+            {
+                fillRandomVector(ref);
+            }
+        }
+        else
+        {
+            fillRandomRegisterValue<CandidateVariantTypeIndex + 1>(value, variant_type_index);
+        }
+    }
+    else
+    {
+        assert(false);
+    }
+}
+
+
+static standard::RegisterData makeRandomRegisterData()
+{
+    standard::RegisterData msg;
+    fillRandomString(msg.name);
+    fillRandomRegisterValue(msg.value,
+                            std::uint8_t(getRandomByte() % std::variant_size_v<standard::RegisterData::Value>));
+    return msg;
+}
+
+
+struct ValuePrinter
+{
+    template <typename T, std::size_t Capacity>
+    void operator()(const util::FixedCapacityVector<T, Capacity>& vector) const
+    {
+        std::cout << "Vector of "
+                  << (std::is_same_v<T, bool> ? "bool" :
+                        (std::is_integral_v<T> ? (std::is_signed_v<T> ? "signed" : "unsigned") :
+                            (std::is_floating_point_v<T> ? "real" : "unknown")))
+                  << " " << (sizeof(T) * 8) << "-bit "
+                  << "[<=" << Capacity << "]:";
+        for (auto& x : vector)
+        {
+            std::cout << " " << std::conditional_t<(sizeof(T) < 2), long, T>(x);
+        }
+        std::cout << std::endl;
+    }
+
+    void operator()(const standard::RegisterData::Unstructured& data) const
+    {
+        std::cout << "Unstructured:\n";
+        printHexDump(data);
+    }
+
+    template <std::size_t Capacity>
+    void operator()(const util::FixedCapacityString<Capacity>& string) const
+    {
+        std::cout << "String: " << string.c_str() << std::endl;
+    }
+
+    void operator()(std::monostate) const
+    {
+        std::cout << "Empty" << std::endl;
+    }
+};
+
+
+static void printRegisterData(const standard::RegisterData& rd)
+{
+    std::cout << "Register name:  " << rd.name.c_str() << std::endl;
+    std::cout << "Register value: ";
+    std::visit(ValuePrinter(), rd.value);
+}
+
+
+TEST_CASE("RegisterDataDecoding")
+{
+    using standard::MessageID;
+    using standard::RegisterData;
+
+    std::cout << "Below are several randomly generated register data structs printed for debugging needs:\n"
+              << "---------\n";
+    for (std::size_t i = 0; i < 10; i++)
+    {
+        std::cout << i << ":\n";
+        printRegisterData(makeRandomRegisterData());
+    }
+    std::cout << "---------\nEnd of randomly generated registers" << std::endl;
+
+    constexpr long long NumberOfIterations = 10'000'000;
+    std::size_t real_comparison_failures = 0;
+
+    for (long long ago = 0; ago < NumberOfIterations; ago++)
+    {
+        if (ago % 100000 == 0)
+        {
+            std::cout << "\r" << ago << "/" << NumberOfIterations << "  \r" << std::flush;
+        }
+
+        const RegisterData synthesized = makeRandomRegisterData();
+        const auto encoded = synthesized.encode(MessageID::RegisterDataResponse);
+
+        const auto maybe_decoded = RegisterData::tryDecode(encoded.begin(), encoded.end(),
+                                                           MessageID::RegisterDataResponse);
+        REQUIRE(maybe_decoded);
+        const RegisterData decoded = *maybe_decoded;
+
+        REQUIRE(decoded.name == synthesized.name);
+        REQUIRE(decoded.value.index() == synthesized.value.index());    // Paranoia
+
+        const auto decoded_then_encoded = decoded.encode(MessageID::RegisterDataResponse);
+
+        if (decoded_then_encoded != encoded)
+        {
+            std::cout << "decoded_then_encoded != encoded" << std::endl;
+            std::cout << "Where decoded_then_encoded:\n";
+            printHexDump(decoded_then_encoded);
+            std::cout << "Where encoded:\n";
+            printHexDump(encoded);
+            FAIL();
+        }
+
+        if (decoded != synthesized)
+        {
+            // Floating point vectors may contain NaN, which are expected to compare non-equal.
+            // Therefore we ignore the non-equality for floating-point types.
+            real_comparison_failures++;
+            REQUIRE((decoded.is<RegisterData::F64>() || decoded.is<RegisterData::F32>()));
+        }
+    }
+
+    std::cout << "\r" << NumberOfIterations << " ITERATIONS DONE; real non-equal comparisons: "
+              << real_comparison_failures
+              << " (" << 100.0 * double(real_comparison_failures) / double(NumberOfIterations) << "%)"
+              << std::endl;
 }

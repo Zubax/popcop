@@ -1844,7 +1844,7 @@ struct RegisterData
      * If no message could be parsed, an empty optional<> will be returned.
      */
     template <typename InputIterator>
-    static std::optional<NodeInfoMessage> tryDecode(InputIterator begin, InputIterator end, const MessageID message_id)
+    static std::optional<RegisterData> tryDecode(InputIterator begin, InputIterator end, const MessageID message_id)
     {
         const auto header = MessageHeader::tryDecode(begin, end);
         if (!header || (header->message_id != message_id))
@@ -1883,11 +1883,20 @@ struct RegisterData
             msg.name.push_back(char(decoder.fetchU8()));
         }
 
-        assert(decoder.getOffset() == (2 + name_len));
+        assert(decoder.getOffset() == (2U + name_len));
 
         decodeValueByTypeID(decoder, msg.value, type_id);
 
         return msg;
+    }
+
+    bool operator==(const RegisterData& rhs) const
+    {
+        return (name == rhs.name) && (value == rhs.value);
+    }
+    bool operator!=(const RegisterData& rhs) const
+    {
+        return !this->operator==(rhs);
     }
 
 private:
