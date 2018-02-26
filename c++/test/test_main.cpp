@@ -1299,7 +1299,30 @@ TEST_CASE("NodeInfoMessage")
 TEST_CASE("RegisterDataEncoding")
 {
     using standard::MessageID;
-    using standard::RegisterData;
+
+    {
+        // Testing standard::RegisterDataResponseMessage here; the other tests test the other message
+        using standard::RegisterDataResponseMessage;
+        RegisterDataResponseMessage msg;
+        REQUIRE(msg.name.empty());
+        REQUIRE(msg.is<RegisterDataResponseMessage::Empty>());
+        REQUIRE(!msg.is<RegisterDataResponseMessage::Unstructured>());
+        REQUIRE(msg.as<RegisterDataResponseMessage::Empty>() != nullptr);
+        REQUIRE(msg.as<RegisterDataResponseMessage::String>() == nullptr);
+
+        REQUIRE(msg == RegisterDataResponseMessage());
+        REQUIRE((msg != RegisterDataResponseMessage()) == false);
+
+        {
+            const auto encoded = msg.encode();
+            REQUIRE(encoded.size() == 10);
+            REQUIRE(encoded == makeArray(std::uint8_t(MessageID::RegisterDataResponse), 0,  // msg ID
+                                         0, 0, 0, 0, 0, 0,  // reserved in header
+                                         0, 0));            // payload
+        }
+    }
+
+    using RegisterData = standard::RegisterDataRequestMessage;
 
     RegisterData msg;
     REQUIRE(msg.name.empty());
@@ -1312,7 +1335,7 @@ TEST_CASE("RegisterDataEncoding")
     REQUIRE((msg != RegisterData()) == false);
 
     {
-        const auto encoded = msg.encode(MessageID::RegisterDataRequest);
+        const auto encoded = msg.encode();
         REQUIRE(encoded.size() == 10);
         REQUIRE(encoded == makeArray(std::uint8_t(MessageID::RegisterDataRequest), 0,  // msg ID
                                      0, 0, 0, 0, 0, 0,  // reserved in header
@@ -1325,9 +1348,9 @@ TEST_CASE("RegisterDataEncoding")
     REQUIRE((msg == RegisterData()) == false);
 
     {
-        const auto encoded = msg.encode(MessageID::RegisterDataResponse);
+        const auto encoded = msg.encode();
         REQUIRE(encoded.size() == 17);
-        REQUIRE(encoded == makeArray(std::uint8_t(MessageID::RegisterDataResponse), 0,  // msg ID
+        REQUIRE(encoded == makeArray(std::uint8_t(MessageID::RegisterDataRequest), 0,   // msg ID
                                      0, 0, 0, 0, 0, 0,                                  // reserved in header
                                      0,                                                 // type ID
                                      7,                                                 // name length
@@ -1341,10 +1364,10 @@ TEST_CASE("RegisterDataEncoding")
     REQUIRE(msg.name.length() == 93);
 
     {
-        const auto encoded = msg.encode(MessageID::RegisterDataResponse);
+        const auto encoded = msg.encode();
         REQUIRE(encoded.size() == 10 + 93);
         const auto reference = makeArray(
-            std::uint8_t(MessageID::RegisterDataResponse), 0,                                // msg ID
+            std::uint8_t(MessageID::RegisterDataRequest), 0,                                 // msg ID
             0, 0, 0, 0, 0, 0,                                                                // reserved in header
             0,                                                                               // type ID
             93,                                                                              // name length
@@ -1370,11 +1393,11 @@ TEST_CASE("RegisterDataEncoding")
     REQUIRE(msg.as<RegisterData::String>() != nullptr);
 
     {
-        const auto encoded = msg.encode(MessageID::RegisterDataResponse);
+        const auto encoded = msg.encode();
         std::cout << "ENCODED (value '1234567'):" << std::endl;
         printHexDump(encoded);
         REQUIRE(encoded.size() == 17);
-        REQUIRE(encoded == makeArray(std::uint8_t(MessageID::RegisterDataResponse), 0,  // msg ID
+        REQUIRE(encoded == makeArray(std::uint8_t(MessageID::RegisterDataRequest), 0,  // msg ID
                                      0, 0, 0, 0, 0, 0,                          // reserved in header
                                      1,                                         // type ID
                                      0,                                         // name length
@@ -1397,10 +1420,10 @@ TEST_CASE("RegisterDataEncoding")
     REQUIRE(msg.as<RegisterData::U64>()->size() == RegisterData::U64::Capacity);
 
     {
-        const auto encoded = msg.encode(MessageID::RegisterDataResponse);
+        const auto encoded = msg.encode();
         REQUIRE(encoded.size() == 10 + 93 + 256);
         const auto reference = makeArray(
-            std::uint8_t(MessageID::RegisterDataResponse), 0,                                // msg ID
+            std::uint8_t(MessageID::RegisterDataRequest), 0,                                 // msg ID
             0, 0, 0, 0, 0, 0,                                                                // reserved in header
             8,                                                                               // type ID
             93,                                                                              // name length
@@ -1438,10 +1461,10 @@ TEST_CASE("RegisterDataEncoding")
     msg.value.emplace<RegisterData::Boolean>({false, true, false, true});
 
     {
-        const auto encoded = msg.encode(MessageID::RegisterDataResponse);
+        const auto encoded = msg.encode();
         REQUIRE(encoded.size() == 10 + 1 + 4);
         const auto reference = makeArray(
-            std::uint8_t(MessageID::RegisterDataResponse), 0,                                // msg ID
+            std::uint8_t(MessageID::RegisterDataRequest), 0,                                 // msg ID
             0, 0, 0, 0, 0, 0,                                                                // reserved in header
             3,                                                                               // type ID
             1,                                                                               // name length
@@ -1462,10 +1485,10 @@ TEST_CASE("RegisterDataEncoding")
     msg.value.emplace<RegisterData::Unstructured>(5, &demo_buffer[0]);
 
     {
-        const auto encoded = msg.encode(MessageID::RegisterDataResponse);
+        const auto encoded = msg.encode();
         REQUIRE(encoded.size() == 10 + 1 + 5);
         const auto reference = makeArray(
-            std::uint8_t(MessageID::RegisterDataResponse), 0,                                // msg ID
+            std::uint8_t(MessageID::RegisterDataRequest), 0,                                 // msg ID
             0, 0, 0, 0, 0, 0,                                                                // reserved in header
             2,                                                                               // type ID
             1,                                                                               // name length
@@ -1485,14 +1508,14 @@ TEST_CASE("RegisterDataEncoding")
 TEST_CASE("RegisterDataDecoding")
 {
     using standard::MessageID;
-    using standard::RegisterData;
+    using standard::RegisterDataResponseMessage;
 
     constexpr std::uint8_t M = std::uint8_t(MessageID::RegisterDataResponse);
 
     const auto go = [](auto... values)
     {
         const auto data = makeArray(values...);
-        return RegisterData::tryDecode(data.begin(), data.end(), MessageID(M));
+        return RegisterDataResponseMessage::tryDecode(data.begin(), data.end());
     };
 
     REQUIRE_FALSE(go());
@@ -1510,8 +1533,9 @@ TEST_CASE("RegisterDataDecoding")
 
     REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0));
     REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0)->name.empty());
-    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0)->is<RegisterData::Empty>());
-    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3)->is<RegisterData::Empty>());  // empty, payload ignored
+    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0)->is<RegisterDataResponseMessage::Empty>());
+    // Payload ignored for empty register values:
+    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3)->is<RegisterDataResponseMessage::Empty>());
 
     REQUIRE_FALSE(go(M, 0, 0, 0, 0, 0, 0, 0,
                      99, 0));                  // Bad type ID
@@ -1531,7 +1555,7 @@ TEST_CASE("RegisterDataDecoding")
     REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0,
                      1, 1, 49, 48)->name == "1");
     REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0,
-                     1, 1, 49, 48)->as<RegisterData::String>()->operator==("0"));
+                     1, 1, 49, 48)->as<RegisterDataResponseMessage::String>()->operator==("0"));
 }
 
 
@@ -1595,12 +1619,13 @@ static void fillRandomRegisterValue(standard::RegisterData::Value& value, const 
 }
 
 
-static standard::RegisterData makeRandomRegisterData()
+template <typename T>
+static T makeRandomRegisterData()
 {
-    standard::RegisterData msg;
+    T msg;
     fillRandomString(msg.name);
     fillRandomRegisterValue(msg.value,
-                            std::uint8_t(getRandomByte() % std::variant_size_v<standard::RegisterData::Value>));
+                            std::uint8_t(getRandomByte() % std::variant_size_v<typename T::Value>));
     return msg;
 }
 
@@ -1652,15 +1677,14 @@ static void printRegisterData(const standard::RegisterData& rd)
 
 TEST_CASE("RegisterDataEncodingDecodingLoop")
 {
-    using standard::MessageID;
-    using standard::RegisterData;
+    using RegisterData = standard::RegisterDataResponseMessage;
 
     std::cout << "Below are several randomly generated register data structs printed for debugging needs:\n"
               << "---------\n";
     for (std::size_t i = 0; i < 10; i++)
     {
         std::cout << i << ":\n";
-        printRegisterData(makeRandomRegisterData());
+        printRegisterData(makeRandomRegisterData<RegisterData>());
     }
     std::cout << "---------\nEnd of randomly generated registers" << std::endl;
 
@@ -1674,18 +1698,17 @@ TEST_CASE("RegisterDataEncodingDecodingLoop")
             std::cout << "\r" << ago << "/" << NumberOfIterations << "  \r" << std::flush;
         }
 
-        const RegisterData synthesized = makeRandomRegisterData();
-        const auto encoded = synthesized.encode(MessageID::RegisterDataResponse);
+        const RegisterData synthesized = makeRandomRegisterData<RegisterData>();
+        const auto encoded = synthesized.encode();
 
-        const auto maybe_decoded = RegisterData::tryDecode(encoded.begin(), encoded.end(),
-                                                           MessageID::RegisterDataResponse);
+        const auto maybe_decoded = RegisterData::tryDecode(encoded.begin(), encoded.end());
         REQUIRE(maybe_decoded);
         const RegisterData decoded = *maybe_decoded;
 
         REQUIRE(decoded.name == synthesized.name);
         REQUIRE(decoded.value.index() == synthesized.value.index());    // Paranoia
 
-        const auto decoded_then_encoded = decoded.encode(MessageID::RegisterDataResponse);
+        const auto decoded_then_encoded = decoded.encode();
 
         if (decoded_then_encoded != encoded)
         {

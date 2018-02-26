@@ -1804,6 +1804,19 @@ struct RegisterData
     template <typename T> [[nodiscard]] const T* as() const { return std::get_if<T>(&value); }
 
     /**
+     * Beware that the comparison will be unreliable if the value stores floating point data.
+     */
+    bool operator==(const RegisterData& rhs) const
+    {
+        return (name == rhs.name) && (value == rhs.value);
+    }
+    bool operator!=(const RegisterData& rhs) const
+    {
+        return !this->operator==(rhs);
+    }
+
+protected:
+    /**
      * Encodes the message into the provided sequential iterator.
      * The iterator can encode and emit the message on the fly - that would be highly efficient;
      * see @ref transport::StreamEmitter.
@@ -1841,62 +1854,55 @@ struct RegisterData
     /**
      * Attempts to decode a message from the provided standard frame.
      * The message ID value in the header will be checked.
-     * If no message could be parsed, an empty optional<> will be returned.
+     * The returned value is true if the message has been parsed successfully, false otherwise.
      */
     template <typename InputIterator>
-    static std::optional<RegisterData> tryDecode(InputIterator begin, InputIterator end, const MessageID message_id)
+    static bool tryDecode(RegisterData& out_msg,
+                          InputIterator begin,
+                          InputIterator end,
+                          const MessageID message_id)
     {
         const auto header = MessageHeader::tryDecode(begin, end);
         if (!header || (header->message_id != message_id))
         {
-            return {};
+            return false;
         }
 
         presentation::StreamDecoder decoder(begin + MessageHeader::Size, end);
         if ((decoder.getRemainingLength() < MinEncodedSize) ||
             (decoder.getRemainingLength() > MaxEncodedSize))
         {
-            return {};
+            return false;
         }
-
-        RegisterData msg;
 
         const std::uint8_t type_id = decoder.fetchU8();
         if (type_id >= std::variant_size_v<Value>)
         {
-            return {};
+            return false;
         }
 
         const std::uint8_t name_len = decoder.fetchU8();
         if (name_len > Name::Capacity)
         {
-            return {};
+            return false;
         }
 
         if (decoder.getRemainingLength() < name_len)
         {
-            return {};
+            return false;
         }
 
+        out_msg.name.clear();
         for (std::uint8_t i = 0; i < name_len; i++)
         {
-            msg.name.push_back(char(decoder.fetchU8()));
+            out_msg.name.push_back(char(decoder.fetchU8()));
         }
 
         assert(decoder.getOffset() == (2U + name_len));
 
-        decodeValueByTypeID(decoder, msg.value, type_id);
+        decodeValueByTypeID(decoder, out_msg.value, type_id);
 
-        return msg;
-    }
-
-    bool operator==(const RegisterData& rhs) const
-    {
-        return (name == rhs.name) && (value == rhs.value);
-    }
-    bool operator!=(const RegisterData& rhs) const
-    {
-        return !this->operator==(rhs);
+        return true;
     }
 
 private:
@@ -2026,6 +2032,70 @@ private:
         {
             x = decoder.template fetchIEEE754<MaxEncodedValueSize / Capacity>();
         }
+    }
+};
+
+/**
+ * Register read request if the value is empty.
+ * Register write request if the value is not empty.
+ */
+struct RegisterDataRequestMessage : public RegisterData
+{
+    static constexpr MessageID ID = MessageID::RegisterDataRequest;
+
+    template <typename OutputIterator>
+    void encode(OutputIterator begin) const
+    {
+        RegisterData::encode(begin, ID);
+    }
+
+    MessageBuffer<MaxEncodedSize> encode() const
+    {
+        return RegisterData::encode(ID);
+    }
+
+    template <typename InputIterator>
+    static std::optional<RegisterDataRequestMessage> tryDecode(InputIterator begin, InputIterator end)
+    {
+        RegisterDataRequestMessage msg;
+        if (RegisterData::tryDecode(msg, begin, end, ID))
+        {
+            return msg;
+        }
+
+        return {};
+    }
+};
+
+/**
+ * Register does not exist if the value is empty.
+ * Register exists if the value is not empty.
+ */
+struct RegisterDataResponseMessage : public RegisterData
+{
+    static constexpr MessageID ID = MessageID::RegisterDataResponse;
+
+    template <typename OutputIterator>
+    void encode(OutputIterator begin) const
+    {
+        RegisterData::encode(begin, ID);
+    }
+
+    MessageBuffer<MaxEncodedSize> encode() const
+    {
+        return RegisterData::encode(ID);
+    }
+
+    template <typename InputIterator>
+    static std::optional<RegisterDataResponseMessage> tryDecode(InputIterator begin, InputIterator end)
+    {
+        RegisterDataResponseMessage msg;
+        if (RegisterData::tryDecode(msg, begin, end, ID))
+        {
+            return msg;
+        }
+
+        return {};
     }
 };
 
