@@ -1700,14 +1700,6 @@ struct NodeInfoMessage
  */
 struct RegisterData
 {
-    static constexpr std::size_t MinEncodedSize = 2;        ///< No name, no value
-    static constexpr std::size_t MaxEncodedSize = 351;      ///< Longest name, longest value
-
-    /**
-     * The number of bytes the value is allowed to take in the encoded form.
-     */
-    static constexpr std::size_t MaxEncodedValueSize = 256;
-
     using Name = util::FixedCapacityString<93>;
 
     /**
@@ -1777,12 +1769,6 @@ struct RegisterData
     >;
 
     /**
-     * Register is just two fields - name and value. It doesn't have anything else.
-     */
-    Name name;
-    Value value;
-
-    /**
      * Shortcut for std::holds_alternative<T>(value).
      * Usage:
      *  if (msg.is<RegisterData::U64>())
@@ -1815,60 +1801,37 @@ struct RegisterData
         return !this->operator==(rhs);
     }
 
-protected:
     /**
-     * Encodes the message into the provided sequential iterator.
-     * The iterator can encode and emit the message on the fly - that would be highly efficient;
-     * see @ref transport::StreamEmitter.
+     * Register is just two fields - name and value. It doesn't have anything else.
      */
+    Name name;
+    Value value;
+
+protected:
+    static constexpr std::size_t MinEncodedSize = 2;        ///< No name, no value
+    static constexpr std::size_t MaxEncodedSize = 351;      ///< Longest name, longest value
+
+    /// The number of bytes the value is allowed to take in the encoded form.
+    static constexpr std::size_t MaxEncodedValueSize = 256;
+
     template <typename OutputIterator>
-    void encode(OutputIterator begin, const MessageID message_id) const
+    void encode(presentation::StreamEncoder<OutputIterator>& encoder) const
     {
-        MessageHeader(message_id).encode(begin);
-        presentation::StreamEncoder encoder(begin);
-
+        assert(encoder.getOffset() == 0);                   // An empty encoder is expected
         encoder.addU8(std::uint8_t(value.index()));
-
         encoder.addU8(std::uint8_t(name.length()));
         encoder.addBytes(name);
         assert(encoder.getOffset() == (2 + name.length()));
-
         std::visit(ValueEncoder(encoder), value);
-
         assert(encoder.getOffset() >= MinEncodedSize);
         assert(encoder.getOffset() <= MaxEncodedSize);
     }
 
-    /**
-     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
-     * This version encodes the message into a fixed capacity array and returns it by value.
-     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
-     */
-    MessageBuffer<MaxEncodedSize> encode(const MessageID message_id) const
-    {
-        MessageBuffer<MaxEncodedSize> out;
-        encode(std::back_inserter(out), message_id);
-        return out;
-    }
-
-    /**
-     * Attempts to decode a message from the provided standard frame.
-     * The message ID value in the header will be checked.
-     * The returned value is true if the message has been parsed successfully, false otherwise.
-     */
     template <typename InputIterator>
-    static bool tryDecode(RegisterData& out_msg,
-                          InputIterator begin,
-                          InputIterator end,
-                          const MessageID message_id)
+    static bool tryDecode(presentation::StreamDecoder<InputIterator>& decoder, RegisterData& out_msg)
     {
-        const auto header = MessageHeader::tryDecode(begin, end);
-        if (!header || (header->message_id != message_id))
-        {
-            return false;
-        }
+        assert(decoder.getOffset() == 0);                   // An empty decoder is expected
 
-        presentation::StreamDecoder decoder(begin + MessageHeader::Size, end);
         if ((decoder.getRemainingLength() < MinEncodedSize) ||
             (decoder.getRemainingLength() > MaxEncodedSize))
         {
@@ -2043,22 +2006,48 @@ struct RegisterDataRequestMessage : public RegisterData
 {
     static constexpr MessageID ID = MessageID::RegisterDataRequest;
 
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     */
     template <typename OutputIterator>
     void encode(OutputIterator begin) const
     {
-        RegisterData::encode(begin, ID);
+        MessageHeader(ID).encode(begin);
+        presentation::StreamEncoder encoder(begin);
+        RegisterData::encode(encoder);
     }
 
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
     MessageBuffer<MaxEncodedSize> encode() const
     {
-        return RegisterData::encode(ID);
+        MessageBuffer<MaxEncodedSize> buf;
+        encode(std::back_inserter(buf));
+        return buf;
     }
 
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     * The returned value is true if the message has been parsed successfully, false otherwise.
+     */
     template <typename InputIterator>
     static std::optional<RegisterDataRequestMessage> tryDecode(InputIterator begin, InputIterator end)
     {
+        const auto header = MessageHeader::tryDecode(begin, end);
+        if (!header || (header->message_id != ID))
+        {
+            return {};
+        }
+
+        presentation::StreamDecoder decoder(begin + MessageHeader::Size, end);
         RegisterDataRequestMessage msg;
-        if (RegisterData::tryDecode(msg, begin, end, ID))
+        if (RegisterData::tryDecode(decoder, msg))
         {
             return msg;
         }
@@ -2075,22 +2064,48 @@ struct RegisterDataResponseMessage : public RegisterData
 {
     static constexpr MessageID ID = MessageID::RegisterDataResponse;
 
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     */
     template <typename OutputIterator>
     void encode(OutputIterator begin) const
     {
-        RegisterData::encode(begin, ID);
+        MessageHeader(ID).encode(begin);
+        presentation::StreamEncoder encoder(begin);
+        RegisterData::encode(encoder);
     }
 
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
     MessageBuffer<MaxEncodedSize> encode() const
     {
-        return RegisterData::encode(ID);
+        MessageBuffer<MaxEncodedSize> buf;
+        encode(std::back_inserter(buf));
+        return buf;
     }
 
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     * The returned value is true if the message has been parsed successfully, false otherwise.
+     */
     template <typename InputIterator>
     static std::optional<RegisterDataResponseMessage> tryDecode(InputIterator begin, InputIterator end)
     {
+        const auto header = MessageHeader::tryDecode(begin, end);
+        if (!header || (header->message_id != ID))
+        {
+            return {};
+        }
+
+        presentation::StreamDecoder decoder(begin + MessageHeader::Size, end);
         RegisterDataResponseMessage msg;
-        if (RegisterData::tryDecode(msg, begin, end, ID))
+        if (RegisterData::tryDecode(decoder, msg))
         {
             return msg;
         }
