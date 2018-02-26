@@ -1295,6 +1295,30 @@ public:
         return s;
     }
 
+    template <std::size_t NumBytes>
+    auto fetchIEEE754()
+    {
+        if constexpr (NumBytes == 4)
+        {
+            static_assert(sizeof(float) == 4);
+            const auto u = fetchU32();
+            float out{};
+            static_assert(sizeof(u) == sizeof(out));
+            std::memcpy(&out, &u, sizeof(out));
+            return out;
+        }
+        else
+        {
+            static_assert(NumBytes == 8, "Only 32-bit and 64-bit floating point formats are defined");
+            static_assert(sizeof(double) == 8);
+            const auto u = fetchU64();
+            double out{};
+            static_assert(sizeof(u) == sizeof(out));
+            std::memcpy(&out, &u, sizeof(out));
+            return out;
+        }
+    }
+
     auto fetchU8()  { return fetchUnsignedInteger<1>(); }
     auto fetchU16() { return fetchUnsignedInteger<2>(); }
     auto fetchU32() { return fetchUnsignedInteger<4>(); }
@@ -1305,25 +1329,8 @@ public:
     auto fetchI32() { return fetchSignedInteger<4>(); }
     auto fetchI64() { return fetchSignedInteger<8>(); }
 
-    float fetchF32()
-    {
-        static_assert(sizeof(float) == 4);
-        const auto u = fetchU32();
-        float out{};
-        static_assert(sizeof(u) == sizeof(out));
-        std::memcpy(&out, &u, sizeof(out));
-        return out;
-    }
-
-    double fetchF64()
-    {
-        static_assert(sizeof(double) == 8);
-        const auto u = fetchU64();
-        double out{};
-        static_assert(sizeof(u) == sizeof(out));
-        std::memcpy(&out, &u, sizeof(out));
-        return out;
-    }
+    auto fetchF32() { return fetchIEEE754<4>(); }
+    auto fetchF64() { return fetchIEEE754<8>(); }
 
     template <typename OutputByteIterator, typename = std::enable_if_t<!std::is_integral_v<OutputByteIterator>>>
     void fetchBytes(OutputByteIterator out_begin, const OutputByteIterator out_end)
@@ -1596,6 +1603,11 @@ struct NodeInfoMessage
         return out;
     }
 
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     * If no message could be parsed, an empty optional<> will be returned.
+     */
     template <typename InputIterator>
     static std::optional<NodeInfoMessage> tryDecode(InputIterator begin, InputIterator end)
     {
@@ -1826,6 +1838,58 @@ struct RegisterData
         return out;
     }
 
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     * If no message could be parsed, an empty optional<> will be returned.
+     */
+    template <typename InputIterator>
+    static std::optional<NodeInfoMessage> tryDecode(InputIterator begin, InputIterator end, const MessageID message_id)
+    {
+        const auto header = MessageHeader::tryDecode(begin, end);
+        if (!header || (header->message_id != message_id))
+        {
+            return {};
+        }
+
+        presentation::StreamDecoder decoder(begin + MessageHeader::Size, end);
+        if ((decoder.getRemainingLength() < MinEncodedSize) ||
+            (decoder.getRemainingLength() > MaxEncodedSize))
+        {
+            return {};
+        }
+
+        RegisterData msg;
+
+        const std::uint8_t type_id = decoder.fetchU8();
+        if (type_id >= std::variant_size_v<Value>)
+        {
+            return {};
+        }
+
+        const std::uint8_t name_len = decoder.fetchU8();
+        if (name_len > Name::Capacity)
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() < name_len)
+        {
+            return {};
+        }
+
+        for (std::uint8_t i = 0; i < name_len; i++)
+        {
+            msg.name.push_back(char(decoder.fetchU8()));
+        }
+
+        assert(decoder.getOffset() == (2 + name_len));
+
+        decodeValueByTypeID(decoder, msg.value, type_id);
+
+        return msg;
+    }
+
 private:
     template <typename OutputIterator>
     class ValueEncoder
@@ -1841,8 +1905,7 @@ private:
         void operator()(const std::monostate&) const { }
 
         /// String handler
-        template <std::size_t Capacity>
-        void operator()(const util::FixedCapacityString<Capacity>& str) const
+        void operator()(const String& str) const
         {
             encoder_.addBytes(str);
         }
@@ -1853,16 +1916,16 @@ private:
         operator()(const util::FixedCapacityVector<T, Capacity>& vec) const
         {
             // The following construct cleverly avoids dependency on the native type sizes.
-            static constexpr std::size_t NumBytes = MaxEncodedValueSize / Capacity;
+            static constexpr std::size_t EncodedItemSize = MaxEncodedValueSize / Capacity;
             for (const T& x : vec)
             {
                 if constexpr (std::is_signed_v<T>)
                 {
-                    encoder_.template addSignedInteger<NumBytes>(x);
+                    encoder_.template addSignedInteger<EncodedItemSize>(x);
                 }
                 else
                 {
-                    encoder_.template addUnsignedInteger<NumBytes>(x);
+                    encoder_.template addUnsignedInteger<EncodedItemSize>(x);
                 }
             }
         }
@@ -1878,6 +1941,83 @@ private:
             }
         }
     };
+
+    template <typename InputByteIterator, std::uint8_t TypeIDCandidate = 0>
+    static void decodeValueByTypeID(presentation::StreamDecoder<InputByteIterator>& decoder,
+                                    Value& out_value,
+                                    const std::uint8_t type_id)
+    {
+        if constexpr (TypeIDCandidate < std::variant_size_v<Value>)
+        {
+            if (type_id == TypeIDCandidate)
+            {
+                decodeSpecificValue(decoder, out_value.emplace<std::variant_alternative_t<TypeIDCandidate, Value>>());
+            }
+            else
+            {
+                decodeValueByTypeID<InputByteIterator, TypeIDCandidate + 1>(decoder, out_value, type_id);
+            }
+        }
+        // Otherwise the type ID is wrong. The caller is supposed to catch that; we're going to leave the value Empty.
+    }
+
+    template <typename InputByteIterator, typename T, std::size_t Capacity>
+    static void resizeVectorBeforeDecoding(presentation::StreamDecoder<InputByteIterator>& decoder,
+                                           util::FixedCapacityVector<T, Capacity>& vector)
+    {
+        // The following construct cleverly avoids dependency on the native type sizes.
+        static constexpr std::size_t EncodedItemSize = MaxEncodedValueSize / Capacity;
+        const std::size_t NumItems = std::min(Capacity, decoder.getRemainingLength() / EncodedItemSize);
+        vector.resize(NumItems);
+    }
+
+    /// Empty value handler
+    template <typename InputByteIterator>
+    static void decodeSpecificValue(presentation::StreamDecoder<InputByteIterator>&, std::monostate&) { }
+
+    /// String handler
+    template <typename InputByteIterator>
+    static void decodeSpecificValue(presentation::StreamDecoder<InputByteIterator>& decoder,
+                                    String& out_string)
+    {
+        decoder.fetchASCIIString(out_string);
+    }
+
+    /// Integer vector handler
+    template <typename InputByteIterator, typename T, std::size_t Capacity>
+    static std::enable_if_t<std::is_integral_v<T>>
+    decodeSpecificValue(presentation::StreamDecoder<InputByteIterator>& decoder,
+                        util::FixedCapacityVector<T, Capacity>& out_vector)
+    {
+        // The following construct cleverly avoids dependency on the native type sizes.
+        static constexpr std::size_t EncodedItemSize = MaxEncodedValueSize / Capacity;
+        resizeVectorBeforeDecoding(decoder, out_vector);
+        for (auto& x : out_vector)
+        {
+            if constexpr (std::is_signed_v<T>)
+            {
+                x = decoder.template fetchSignedInteger<EncodedItemSize>();
+            }
+            else
+            {
+                // Cast is needed here to properly handle booleans
+                x = T(decoder.template fetchUnsignedInteger<EncodedItemSize>());
+            }
+        }
+    }
+
+    /// Float vector handler
+    template <typename InputByteIterator, typename T, std::size_t Capacity>
+    static std::enable_if_t<std::is_floating_point_v<T>>
+    decodeSpecificValue(presentation::StreamDecoder<InputByteIterator>& decoder,
+                        util::FixedCapacityVector<T, Capacity>& out_vector)
+    {
+        resizeVectorBeforeDecoding(decoder, out_vector);
+        for (auto& x : out_vector)
+        {
+            x = decoder.template fetchIEEE754<MaxEncodedValueSize / Capacity>();
+        }
+    }
 };
 
 } // namespace standard
