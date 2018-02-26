@@ -1188,6 +1188,30 @@ public:
         addUnsignedInteger<NumBytes>(u);
     }
 
+    template <std::size_t NumBytes, typename T>
+    void addIEEE754(const T& value)
+    {
+        if constexpr (NumBytes == 4)
+        {
+            static_assert(sizeof(float) == 4);
+            const float f = float(value);
+            std::uint32_t u = 0;
+            static_assert(sizeof(u) == sizeof(f));
+            std::memcpy(&u, &f, sizeof(u));
+            addU32(u);
+        }
+        else
+        {
+            static_assert(NumBytes == 8, "Only 32-bit and 64-bit floating point formats are defined");
+            static_assert(sizeof(double) == 8);
+            const double f = double(value);
+            std::uint64_t u = 0;
+            static_assert(sizeof(u) == sizeof(f));
+            std::memcpy(&u, &f, sizeof(u));
+            addU64(u);
+        }
+    }
+
     template <typename T> void addU8(const T& x)  { addUnsignedInteger<1>(x); }
     template <typename T> void addU16(const T& x) { addUnsignedInteger<2>(x); }
     template <typename T> void addU32(const T& x) { addUnsignedInteger<4>(x); }
@@ -1198,23 +1222,8 @@ public:
     template <typename T> void addI32(const T& x) { addSignedInteger<4>(x); }
     template <typename T> void addI64(const T& x) { addSignedInteger<8>(x); }
 
-    void addF32(const float value)
-    {
-        static_assert(sizeof(float) == 4);
-        std::uint32_t u = 0;
-        static_assert(sizeof(u) == sizeof(value));
-        std::memcpy(&u, &value, sizeof(u));
-        addU32(u);
-    }
-
-    void addF64(const double value)
-    {
-        static_assert(sizeof(double) == 8);
-        std::uint64_t u = 0;
-        static_assert(sizeof(u) == sizeof(value));
-        std::memcpy(&u, &value, sizeof(u));
-        addU64(u);
-    }
+    template <typename T> void addF32(const T& x) { addIEEE754<4>(x); }
+    template <typename T> void addF64(const T& x) { addIEEE754<8>(x); }
 
     void fillUpToOffset(const std::size_t offset, const std::uint8_t fill_value = 0)
     {
@@ -1388,7 +1397,9 @@ static constexpr std::chrono::seconds DefaultStandardRequestTimeout = std::chron
  */
 enum class MessageID : std::uint16_t
 {
-    NodeInfo = 0,
+    NodeInfo                = 0,
+    RegisterDataRequest     = 1,
+    RegisterDataResponse    = 2,
 };
 
 /**
@@ -1676,8 +1687,13 @@ struct NodeInfoMessage
  */
 struct RegisterData
 {
-    static constexpr std::size_t MinEncodedSize = 95;
-    static constexpr std::size_t MaxEncodedSize = 351;
+    static constexpr std::size_t MinEncodedSize = 2;        ///< No name, no value
+    static constexpr std::size_t MaxEncodedSize = 351;      ///< Longest name, longest value
+
+    /**
+     * The number of bytes the value is allowed to take in the encoded form.
+     */
+    static constexpr std::size_t MaxEncodedValueSize = 256;
 
     using Name = util::FixedCapacityString<93>;
 
@@ -1736,14 +1752,29 @@ struct RegisterData
      * see @ref transport::StreamEmitter.
      */
     template <typename ValueType, typename OutputIterator, typename... ValueCtorArgs>
-    static void fastEncode(OutputIterator begin, const char* name, ValueCtorArgs&&... args)
+    static void encodeQuickly(OutputIterator begin,
+                              const MessageID message_id,
+                              const char* name,
+                              ValueCtorArgs&&... args)
     {
-        (void) name;
+        MessageHeader(message_id).encode(begin);
+        presentation::StreamEncoder encoder(begin);
 
+        const ValueType value(std::forward<ValueCtorArgs>(args)...);
+        encoder.addU8(std::uint8_t(value.index()));
+
+        if (name != nullptr)
         {
-            const ValueType value(std::forward<ValueCtorArgs>(args)...);
-            (void) value;
+            for (std::size_t i = 0; (i < Name::Capacity) && (*name != '\0'); i++)
+            {
+                encoder.addU8(std::uint8_t(*name++));
+            }
         }
+
+        std::visit(ValueEncoder(encoder), value);
+
+        assert(encoder.getOffset() >= MinEncodedSize);
+        assert(encoder.getOffset() <= MaxEncodedSize);
     }
 
     /**
@@ -1752,9 +1783,21 @@ struct RegisterData
      * see @ref transport::StreamEmitter.
      */
     template <typename OutputIterator>
-    void encode(OutputIterator begin) const
+    void encode(OutputIterator begin, const MessageID message_id) const
     {
-        (void) begin;
+        MessageHeader(message_id).encode(begin);
+        presentation::StreamEncoder encoder(begin);
+
+        encoder.addU8(std::uint8_t(value.index()));
+
+        encoder.addU8(std::uint8_t(name.length()));
+        encoder.addBytes(name);
+        assert(encoder.getOffset() == (2 + name.length()));
+
+        std::visit(ValueEncoder(encoder), value);
+
+        assert(encoder.getOffset() >= MinEncodedSize);
+        assert(encoder.getOffset() <= MaxEncodedSize);
     }
 
     /**
@@ -1762,12 +1805,65 @@ struct RegisterData
      * This version encodes the message into a fixed capacity array and returns it by value.
      * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
      */
-    MessageBuffer<MaxEncodedSize> encode() const
+    MessageBuffer<MaxEncodedSize> encode(const MessageID message_id) const
     {
         MessageBuffer<MaxEncodedSize> out;
-        encode(std::back_inserter(out));
+        encode(std::back_inserter(out), message_id);
         return out;
     }
+
+private:
+    template <typename OutputIterator>
+    class ValueEncoder
+    {
+        presentation::StreamEncoder<OutputIterator>& encoder_;
+
+    public:
+        explicit ValueEncoder(presentation::StreamEncoder<OutputIterator>& stream_encoder) :
+            encoder_(stream_encoder)
+        { }
+
+        /// Empty value handler
+        void operator()(const std::monostate&) const { }
+
+        /// String handler
+        template <std::size_t Capacity>
+        void operator()(const util::FixedCapacityString<Capacity>& str) const
+        {
+            encoder_.addBytes(str);
+        }
+
+        /// Integer vector handler
+        template <typename T, std::size_t Capacity>
+        std::enable_if_t<std::is_integral_v<T>>
+        operator()(const util::FixedCapacityVector<T, Capacity>& vec) const
+        {
+            // The following construct cleverly avoids dependency on the native type sizes.
+            static constexpr std::size_t NumBytes = MaxEncodedValueSize / Capacity;
+            for (const T& x : vec)
+            {
+                if constexpr (std::is_signed_v<T>)
+                {
+                    encoder_.template addSignedInteger<NumBytes>(x);
+                }
+                else
+                {
+                    encoder_.template addUnsignedInteger<NumBytes>(x);
+                }
+            }
+        }
+
+        /// Float vector handler
+        template <typename T, std::size_t Capacity>
+        std::enable_if_t<std::is_floating_point_v<T>>
+        operator()(const util::FixedCapacityVector<T, Capacity>& vec) const
+        {
+            for (const T& x : vec)
+            {
+                encoder_.template addIEEE754<MaxEncodedValueSize / Capacity>(x);
+            }
+        }
+    };
 };
 
 } // namespace standard
