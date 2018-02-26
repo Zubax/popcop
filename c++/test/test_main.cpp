@@ -1482,6 +1482,59 @@ TEST_CASE("RegisterDataEncoding")
 }
 
 
+TEST_CASE("RegisterDataDecoding")
+{
+    using standard::MessageID;
+    using standard::RegisterData;
+
+    constexpr std::uint8_t M = std::uint8_t(MessageID::RegisterDataResponse);
+
+    const auto go = [](auto... values)
+    {
+        const auto data = makeArray(values...);
+        return RegisterData::tryDecode(data.begin(), data.end(), MessageID(M));
+    };
+
+    REQUIRE_FALSE(go());
+    REQUIRE_FALSE(go(0));
+    REQUIRE_FALSE(go(M, 0));
+    REQUIRE_FALSE(go(0, 0, 0));
+    REQUIRE_FALSE(go(M, 0, 0, 0));
+    REQUIRE_FALSE(go(0, 0, 0, 0, 0));
+    REQUIRE_FALSE(go(M, 0, 0, 0, 0, 0));
+    REQUIRE_FALSE(go(0, 0, 0, 0, 0, 0, 0));
+    REQUIRE_FALSE(go(M, 0, 0, 0, 0, 0, 0, 0));
+    REQUIRE_FALSE(go(0, 0, 0, 0, 0, 0, 0, 0, 0));
+    REQUIRE_FALSE(go(0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+
+    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0)->name.empty());
+    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0)->is<RegisterData::Empty>());
+    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3)->is<RegisterData::Empty>());  // empty, payload ignored
+
+    REQUIRE_FALSE(go(M, 0, 0, 0, 0, 0, 0, 0,
+                     99, 0));                  // Bad type ID
+
+    REQUIRE_FALSE(go(M, 0, 0, 0, 0, 0, 0, 0,
+                     0, 99));                  // Bad name length
+
+    REQUIRE_FALSE(go(M, 0, 0, 0, 0, 0, 0, 0,
+                     0, 1));                   // Bad name length
+
+    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0,
+                     0, 1, 49)->name == "1");
+
+    REQUIRE_FALSE(go(M, 0, 0, 0, 0, 0, 0, 0,
+                     0, 2, 49));               // Bad name length
+
+    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0,
+                     1, 1, 49, 48)->name == "1");
+    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0,
+                     1, 1, 49, 48)->as<RegisterData::String>()->operator==("0"));
+}
+
+
 template <std::size_t Capacity>
 static inline void fillRandomString(util::FixedCapacityString<Capacity>& out_string)
 {
@@ -1597,7 +1650,7 @@ static void printRegisterData(const standard::RegisterData& rd)
 }
 
 
-TEST_CASE("RegisterDataDecoding")
+TEST_CASE("RegisterDataEncodingDecodingLoop")
 {
     using standard::MessageID;
     using standard::RegisterData;
