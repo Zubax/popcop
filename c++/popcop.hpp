@@ -992,7 +992,8 @@ private:
 public:
     FixedCapacityVector() = default;
 
-    explicit FixedCapacityVector(std::initializer_list<T> values)
+    // Implicit by design
+    FixedCapacityVector(std::initializer_list<T> values)
     {
         for (const auto& v : values)
         {
@@ -1697,24 +1698,52 @@ struct RegisterData
 
     using Name = util::FixedCapacityString<93>;
 
-    using Empty = std::monostate;
-    using String = util::FixedCapacityString<256>;
-    struct Unstructured : util::FixedCapacityVector<std::uint8_t,  256> { };
-    struct Boolean : util::FixedCapacityVector<bool, 256> { };
-    // Signed integers
-    using I64 = util::FixedCapacityVector<std::int64_t,  32>;
-    using I32 = util::FixedCapacityVector<std::int32_t,  64>;
-    using I16 = util::FixedCapacityVector<std::int16_t,  128>;
-    using I8  = util::FixedCapacityVector<std::int8_t,   256>;
-    // Unsigned integers
-    using U64 = util::FixedCapacityVector<std::uint64_t, 32>;
-    using U32 = util::FixedCapacityVector<std::uint32_t, 64>;
-    using U16 = util::FixedCapacityVector<std::uint16_t, 128>;
-    using U8  = util::FixedCapacityVector<std::uint8_t,  256>;
-    // IEEE754 floating point
-    using F64 = util::FixedCapacityVector<double, 32>;
-    using F32 = util::FixedCapacityVector<float,  64>;
+    /**
+     * List of possible value types. There are 14 of them, each has a distinct type ID from 0 to 13, inclusive.
+     */
+    /// No value; used to represent missing registers and requests for data
+    using Empty = std::monostate;                                                       ///< Type ID 0
 
+    /// ASCII string, or UTF-8 encoded bytes
+    using String = util::FixedCapacityString<256>;                                      ///< Type ID 1
+
+    /// A wrapper is needed rather than alias to create a distinct type for std::variant
+    struct Unstructured : public util::FixedCapacityVector<std::uint8_t,  256>          ///< Type ID 2
+    {
+        using Base = util::FixedCapacityVector<std::uint8_t, 256>;
+        Unstructured() = default;
+        Unstructured(std::size_t len, const std::uint8_t* ptr) : Base(ptr, ptr + len) { }
+    };
+
+    /// A wrapper is needed rather than alias to create a distinct type for std::variant
+    struct Boolean : public util::FixedCapacityVector<bool, 256>                        ///< Type ID 3
+    {
+        using Base = util::FixedCapacityVector<bool, 256>;
+        Boolean() = default;
+        Boolean(std::initializer_list<bool> il) : Base(il) { }
+        Boolean(std::size_t count, bool value)  : Base(count, value) { }
+    };
+
+    /// Signed integers
+    using I64 = util::FixedCapacityVector<std::int64_t,  32>;                           ///< Type ID 4
+    using I32 = util::FixedCapacityVector<std::int32_t,  64>;                           ///< Type ID 5
+    using I16 = util::FixedCapacityVector<std::int16_t,  128>;                          ///< Type ID 6
+    using I8  = util::FixedCapacityVector<std::int8_t,   256>;                          ///< Type ID 7
+
+    /// Unsigned integers
+    using U64 = util::FixedCapacityVector<std::uint64_t, 32>;                           ///< Type ID 8
+    using U32 = util::FixedCapacityVector<std::uint32_t, 64>;                           ///< Type ID 9
+    using U16 = util::FixedCapacityVector<std::uint16_t, 128>;                          ///< Type ID 10
+    using U8  = util::FixedCapacityVector<std::uint8_t,  256>;                          ///< Type ID 11
+
+    /// IEEE754 floating point
+    using F64 = util::FixedCapacityVector<double, 32>;                                  ///< Type ID 12
+    using F32 = util::FixedCapacityVector<float,  64>;                                  ///< Type ID 13
+
+    /**
+     * All value types represented as a single algebraic type (tagged union).
+     * Note that the order of declaration matters, because it defines the type ID mappings.
+     */
     using Value = std::variant<
         Empty,              ///< No value is provided
         String,             ///< UTF-8 encoded string of text
@@ -1735,47 +1764,32 @@ struct RegisterData
         F32
     >;
 
+    /**
+     * Register is just two fields - name and value. It doesn't have anything else.
+     */
     Name name;
     Value value;
 
+    /**
+     * Shortcut for std::holds_alternative<T>(value).
+     * Usage:
+     *  if (msg.is<RegisterData::U64>())
+     *  {
+     *      // Message contains an array of uint64
+     *  }
+     */
     template <typename T> [[nodiscard]] bool is() const { return std::holds_alternative<T>(value); }
 
-    template <typename T> [[nodiscard]]       T* as()       { return std::get_if<T>(value); }
-    template <typename T> [[nodiscard]] const T* as() const { return std::get_if<T>(value); }
-
     /**
-     * Encodes the message into the provided sequential iterator without constructing an object first.
-     * This version is a highly speed-optimized shortcut for simple usage scenarios.
-     * Normally you would want to construct an object and then call @ref encode() on it,
-     * rather than using this particular function.
-     * The iterator can encode and emit the message on the fly - that would be highly efficient;
-     * see @ref transport::StreamEmitter.
+     * Shortcut for std::get_if<T>(&value).
+     * Usage:
+     *  if (auto value = msg.as<RegisterData::U64>())
+     *  {
+     *      // Message contains an array of uint64; the pointer to that array is now stored in 'value'
+     *  }
      */
-    template <typename ValueType, typename OutputIterator, typename... ValueCtorArgs>
-    static void encodeQuickly(OutputIterator begin,
-                              const MessageID message_id,
-                              const char* name,
-                              ValueCtorArgs&&... args)
-    {
-        MessageHeader(message_id).encode(begin);
-        presentation::StreamEncoder encoder(begin);
-
-        const ValueType value(std::forward<ValueCtorArgs>(args)...);
-        encoder.addU8(std::uint8_t(value.index()));
-
-        if (name != nullptr)
-        {
-            for (std::size_t i = 0; (i < Name::Capacity) && (*name != '\0'); i++)
-            {
-                encoder.addU8(std::uint8_t(*name++));
-            }
-        }
-
-        std::visit(ValueEncoder(encoder), value);
-
-        assert(encoder.getOffset() >= MinEncodedSize);
-        assert(encoder.getOffset() <= MaxEncodedSize);
-    }
+    template <typename T> [[nodiscard]]       T* as()       { return std::get_if<T>(&value); }
+    template <typename T> [[nodiscard]] const T* as() const { return std::get_if<T>(&value); }
 
     /**
      * Encodes the message into the provided sequential iterator.

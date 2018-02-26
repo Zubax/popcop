@@ -1291,3 +1291,183 @@ TEST_CASE("NodeInfoMessage")
         REQUIRE(!m->software_version.dirty_build);
     }
 }
+
+
+TEST_CASE("RegisterData")
+{
+    using standard::MessageID;
+    using standard::RegisterData;
+
+    RegisterData msg;
+    REQUIRE(msg.name.empty());
+    REQUIRE(msg.is<RegisterData::Empty>());
+    REQUIRE(!msg.is<RegisterData::Unstructured>());
+    REQUIRE(msg.as<RegisterData::Empty>() != nullptr);
+    REQUIRE(msg.as<RegisterData::String>() == nullptr);
+
+    {
+        const auto encoded = msg.encode(MessageID::RegisterDataRequest);
+        REQUIRE(encoded.size() == 10);
+        REQUIRE(encoded == makeArray(std::uint8_t(MessageID::RegisterDataRequest), 0,  // msg ID
+                                     0, 0, 0, 0, 0, 0,  // reserved in header
+                                     0, 0));            // payload
+    }
+
+    msg.name = "1234567";
+
+    {
+        const auto encoded = msg.encode(MessageID::RegisterDataResponse);
+        REQUIRE(encoded.size() == 17);
+        REQUIRE(encoded == makeArray(std::uint8_t(MessageID::RegisterDataResponse), 0,  // msg ID
+                                     0, 0, 0, 0, 0, 0,                                  // reserved in header
+                                     0,                                                 // type ID
+                                     7,                                                 // name length
+                                     49, 50, 51, 52, 53, 54, 55));                      // name
+    }
+
+    while (msg.name.length() != msg.name.max_size())
+    {
+        msg.name.push_back('Z');
+    }
+    REQUIRE(msg.name.length() == 93);
+
+    {
+        const auto encoded = msg.encode(MessageID::RegisterDataResponse);
+        REQUIRE(encoded.size() == 10 + 93);
+        const auto reference = makeArray(
+            std::uint8_t(MessageID::RegisterDataResponse), 0,                                // msg ID
+            0, 0, 0, 0, 0, 0,                                                                // reserved in header
+            0,                                                                               // type ID
+            93,                                                                              // name length
+            49, 50, 51, 52, 53, 54, 55, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,  // name
+            90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+            90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+            90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+            90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+        );
+        std::cout << "ENCODED (Z):" << std::endl;
+        printHexDump(encoded);
+        std::cout << "REFERENCE (Z):" << std::endl;
+        printHexDump(reference);
+        REQUIRE(encoded.size() == reference.size());
+        REQUIRE(encoded == reference);
+    }
+
+    msg.name.clear();
+    msg.value.emplace<RegisterData::String>("1234567");
+    REQUIRE(!msg.is<RegisterData::Empty>());
+    REQUIRE(msg.is<RegisterData::String>());
+    REQUIRE(msg.as<RegisterData::Empty>() == nullptr);
+    REQUIRE(msg.as<RegisterData::String>() != nullptr);
+
+    {
+        const auto encoded = msg.encode(MessageID::RegisterDataResponse);
+        std::cout << "ENCODED (value '1234567'):" << std::endl;
+        printHexDump(encoded);
+        REQUIRE(encoded.size() == 17);
+        REQUIRE(encoded == makeArray(std::uint8_t(MessageID::RegisterDataResponse), 0,  // msg ID
+                                     0, 0, 0, 0, 0, 0,                          // reserved in header
+                                     1,                                         // type ID
+                                     0,                                         // name length
+                                     49, 50, 51, 52, 53, 54, 55));              // value
+    }
+
+    while (msg.name.length() != msg.name.max_size())
+    {
+        msg.name.push_back('Z');
+    }
+
+    msg.value.emplace<RegisterData::U64>();
+    while (msg.as<RegisterData::U64>()->size() != msg.as<RegisterData::U64>()->max_size())
+    {
+        msg.as<RegisterData::U64>()->push_back(0xDEAD'BEEF'BADC'0FFEULL);
+    }
+
+    REQUIRE(msg.name.length() == 93);
+    REQUIRE(msg.as<RegisterData::U64>()->size() == 32);
+    REQUIRE(msg.as<RegisterData::U64>()->size() == RegisterData::U64::Capacity);
+
+    {
+        const auto encoded = msg.encode(MessageID::RegisterDataResponse);
+        REQUIRE(encoded.size() == 10 + 93 + 256);
+        const auto reference = makeArray(
+            std::uint8_t(MessageID::RegisterDataResponse), 0,                                // msg ID
+            0, 0, 0, 0, 0, 0,                                                                // reserved in header
+            8,                                                                               // type ID
+            93,                                                                              // name length
+            90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,  // name
+            90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+            90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+            90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+            90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,  // value
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE
+        );
+        std::cout << "ENCODED (dead beef, bad covfefe):" << std::endl;
+        printHexDump(encoded);
+        std::cout << "REFERENCE (dead beef, bad covfefe):" << std::endl;
+        printHexDump(reference);
+        REQUIRE(encoded.size() == reference.size());
+        REQUIRE(encoded == reference);
+    }
+
+    msg.name = "0";
+    msg.value.emplace<RegisterData::Boolean>({false, true, false, true});
+
+    {
+        const auto encoded = msg.encode(MessageID::RegisterDataResponse);
+        REQUIRE(encoded.size() == 10 + 1 + 4);
+        const auto reference = makeArray(
+            std::uint8_t(MessageID::RegisterDataResponse), 0,                                // msg ID
+            0, 0, 0, 0, 0, 0,                                                                // reserved in header
+            3,                                                                               // type ID
+            1,                                                                               // name length
+            48,                                                                              // name
+            0, 1, 0, 1                                                                       // value
+        );
+        std::cout << "ENCODED (bool):" << std::endl;
+        printHexDump(encoded);
+        std::cout << "REFERENCE (bool):" << std::endl;
+        printHexDump(reference);
+        REQUIRE(encoded.size() == reference.size());
+        REQUIRE(encoded == reference);
+    }
+
+    std::uint8_t demo_buffer[] = {1, 2, 3, 4, 5};
+
+    msg.name = "1";
+    msg.value.emplace<RegisterData::Unstructured>(5, &demo_buffer[0]);
+
+    {
+        const auto encoded = msg.encode(MessageID::RegisterDataResponse);
+        REQUIRE(encoded.size() == 10 + 1 + 5);
+        const auto reference = makeArray(
+            std::uint8_t(MessageID::RegisterDataResponse), 0,                                // msg ID
+            0, 0, 0, 0, 0, 0,                                                                // reserved in header
+            2,                                                                               // type ID
+            1,                                                                               // name length
+            49,                                                                              // name
+            1, 2, 3, 4, 5                                                                    // value
+        );
+        std::cout << "ENCODED (unstructured):" << std::endl;
+        printHexDump(encoded);
+        std::cout << "REFERENCE (unstructured):" << std::endl;
+        printHexDump(reference);
+        REQUIRE(encoded.size() == reference.size());
+        REQUIRE(encoded == reference);
+    }
+}
