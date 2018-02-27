@@ -1738,3 +1738,67 @@ TEST_CASE("RegisterDataEncodingDecodingLoop")
               << " (" << 100.0 * double(real_comparison_failures) / double(NumberOfIterations) << "%)"
               << std::endl;
 }
+
+
+TEST_CASE("RegisterName")
+{
+    using N = standard::RegisterName;
+    N n;
+
+    const auto encode = [](N& value)
+    {
+        standard::DynamicMessageBuffer<N::MaxEncodedSize> buf;
+        presentation::StreamEncoder encoder(std::back_inserter(buf));
+        value.encode(encoder);
+        REQUIRE(buf.size() == encoder.getOffset());
+        REQUIRE(buf.size() >= N::MinEncodedSize);
+        REQUIRE(buf.size() <= N::MaxEncodedSize);
+        return buf;
+    };
+
+    const auto decode = [](auto... bytes) -> std::optional<N>
+    {
+        const auto data = makeArray(bytes...);
+        N value;
+        presentation::StreamDecoder decoder(data.begin(), data.end());
+        if (N::tryDecode(decoder, value))
+        {
+            return value;
+        }
+        return {};
+    };
+
+    REQUIRE(encode(n) == makeArray(0));
+    n += "123";
+    REQUIRE(encode(n) == makeArray(3, 49, 50, 51));
+    while (n.size() < n.max_size())
+    {
+        n.push_back('Z');
+    }
+    REQUIRE(encode(n) == makeArray(93, 49, 50, 51,
+                                   90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                                   90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                                   90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                                   90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                                   90, 90, 90, 90, 90, 90, 90, 90, 90, 90));
+
+    REQUIRE(!decode());
+    REQUIRE(!decode(1));
+    REQUIRE(!decode(94));
+    REQUIRE(decode(0));
+    REQUIRE(decode(0)->empty());
+
+    REQUIRE(decode(1, 49));
+    REQUIRE("1" == *decode(1, 49));
+
+    {
+        auto res = decode(93, 49, 50, 51,
+                          90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                          90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                          90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                          90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                          90, 90, 90, 90, 90, 90, 90, 90, 90, 90);
+        REQUIRE(res);
+        REQUIRE(n == *res);
+    }
+}

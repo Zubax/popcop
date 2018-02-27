@@ -1711,6 +1711,60 @@ struct NodeInfoMessage
 };
 
 /**
+ * This is not a message class.
+ * This is a serializable register name that can be used in register manipulation messages.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u8              length          Length of the next field.
+ *      1       u8[<=93]        name            ASCII name, not terminated - see the previous field.
+ *  -----------------------------------------------------------------------------------------------
+ *    <=94
+ */
+struct RegisterName : public util::FixedCapacityString<93>
+{
+    using Base = util::FixedCapacityString<93>;
+
+    static constexpr std::size_t MinEncodedSize = 1;
+    static constexpr std::size_t MaxEncodedSize = 94;
+
+    using Base::FixedCapacityString;    ///< All constructors are inherited
+    using Base::operator=;
+
+    template <typename OutputIterator>
+    void encode(presentation::StreamEncoder<OutputIterator>& encoder) const
+    {
+        encoder.addU8(std::uint8_t(this->length()));
+        encoder.addBytes(*this);
+    }
+
+    template <typename InputIterator>
+    static bool tryDecode(presentation::StreamDecoder<InputIterator>& decoder, RegisterName& out)
+    {
+        if ((decoder.getRemainingLength() < MinEncodedSize) ||
+            (decoder.getRemainingLength() > MaxEncodedSize))
+        {
+            return false;
+        }
+
+        const std::uint8_t name_len = decoder.fetchU8();
+        if ((name_len > Capacity) ||
+            (name_len > decoder.getRemainingLength()))
+        {
+            return false;
+        }
+
+        out.clear();
+        for (std::uint8_t i = 0; i < name_len; i++)
+        {
+            out.push_back(char(decoder.fetchU8()));
+        }
+
+        return true;
+    }
+};
+
+/**
  * This is not a message class. Rather, it is a base class for the following message classes defined below.
  * It can be used by the application as well, but it can't be sent or received over the wire.
  * Use the derived classes instead.
