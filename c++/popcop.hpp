@@ -1731,6 +1731,9 @@ struct RegisterName : public util::FixedCapacityString<93>
     using Base::FixedCapacityString;    ///< All constructors are inherited
     using Base::operator=;
 
+    /**
+     * Serializes the object into the provided encoder.
+     */
     template <typename OutputIterator>
     void encode(presentation::StreamEncoder<OutputIterator>& encoder) const
     {
@@ -1738,8 +1741,11 @@ struct RegisterName : public util::FixedCapacityString<93>
         encoder.addBytes(*this);
     }
 
+    /**
+     * Attempts to reconstruct the state of the current object from the provided data stream.
+     */
     template <typename InputIterator>
-    static bool tryDecode(presentation::StreamDecoder<InputIterator>& decoder, RegisterName& out)
+    bool tryDecode(presentation::StreamDecoder<InputIterator>& decoder)
     {
         if ((decoder.getRemainingLength() < MinEncodedSize) ||
             (decoder.getRemainingLength() > MaxEncodedSize))
@@ -1754,37 +1760,25 @@ struct RegisterName : public util::FixedCapacityString<93>
             return false;
         }
 
-        out.clear();
+        clear();
         for (std::uint8_t i = 0; i < name_len; i++)
         {
-            out.push_back(char(decoder.fetchU8()));
+            push_back(char(decoder.fetchU8()));
         }
 
         return true;
     }
 };
 
-/**
- * This is not a message class. Rather, it is a base class for the following message classes defined below.
- * It can be used by the application as well, but it can't be sent or received over the wire.
- * Use the derived classes instead.
- *
- *      Offset  Type            Name            Description
- *  -----------------------------------------------------------------------------------------------
- *      0       u8              type_id         Type of the value contained in this register.
- *      1       u8              name_length     Length of the next field, also (offset_of_the_payload - 2).
- *      2       u8[<=93]        name            ASCII name, not terminated - see the previous field.
- *      2...95  u8[<=256]       encoded_payload Array of values whose types are defined by type_id.
- *  -----------------------------------------------------------------------------------------------
- *    <=351
- */
-struct RegisterData
+/// Implementation details; do not use that in user code
+namespace detail_
 {
-    using Name = util::FixedCapacityString<93>;
-
-    /**
-     * List of possible value types. There are 14 of them, each has a distinct type ID from 0 to 13, inclusive.
-     */
+/**
+ * List of possible register value types. There are 14 of them, each has a distinct type ID starting from 0.
+ * This type cannot be instantiated directly! It is only a type container.
+ */
+struct RegisterValueTypes
+{
     /// No value; used to represent missing registers and requests for data
     using Empty = std::monostate;                                                       ///< Type ID 0
 
@@ -1792,27 +1786,25 @@ struct RegisterData
     using String = util::FixedCapacityString<256>;                                      ///< Type ID 1
 
     /// A wrapper is needed rather than alias to create a distinct type for std::variant
-    struct Unstructured : public util::FixedCapacityVector<std::uint8_t,  256>          ///< Type ID 2
+    struct Unstructured : public util::FixedCapacityVector<std::uint8_t, 256>           ///< Type ID 2
     {
         using Base = util::FixedCapacityVector<std::uint8_t, 256>;
         Unstructured() = default;
-        Unstructured(std::size_t len, const std::uint8_t* ptr) : Base(ptr, ptr + len) { }
+        Unstructured(std::size_t len, const std::uint8_t* ptr) : Base(ptr, ptr + len) {}
     };
 
     /// A wrapper is needed rather than alias to create a distinct type for std::variant
     struct Boolean : public util::FixedCapacityVector<bool, 256>                        ///< Type ID 3
     {
         using Base = util::FixedCapacityVector<bool, 256>;
-        Boolean() = default;
-        Boolean(std::initializer_list<bool> il) : Base(il) { }
-        Boolean(std::size_t count, bool value)  : Base(count, value) { }
+        using Base::FixedCapacityVector;
     };
 
     /// Signed integers
-    using I64 = util::FixedCapacityVector<std::int64_t,  32>;                           ///< Type ID 4
-    using I32 = util::FixedCapacityVector<std::int32_t,  64>;                           ///< Type ID 5
-    using I16 = util::FixedCapacityVector<std::int16_t,  128>;                          ///< Type ID 6
-    using I8  = util::FixedCapacityVector<std::int8_t,   256>;                          ///< Type ID 7
+    using I64 = util::FixedCapacityVector<std::int64_t, 32>;                            ///< Type ID 4
+    using I32 = util::FixedCapacityVector<std::int32_t, 64>;                            ///< Type ID 5
+    using I16 = util::FixedCapacityVector<std::int16_t, 128>;                           ///< Type ID 6
+    using I8  = util::FixedCapacityVector<std::int8_t,  256>;                           ///< Type ID 7
 
     /// Unsigned integers
     using U64 = util::FixedCapacityVector<std::uint64_t, 32>;                           ///< Type ID 8
@@ -1828,7 +1820,7 @@ struct RegisterData
      * All value types represented as a single algebraic type (tagged union).
      * Note that the order of declaration matters, because it defines the type ID mappings.
      */
-    using Value = std::variant<
+    using Variant = std::variant<
         Empty,              ///< No value is provided
         String,             ///< UTF-8 encoded string of text
         Unstructured,       ///< Raw unstructured bytes
@@ -1848,30 +1840,234 @@ struct RegisterData
         F32
     >;
 
+protected:  // This type cannot be instantiated directly
+    RegisterValueTypes() = default;
+    ~RegisterValueTypes() = default;
+
+    /// The number of bytes the value is allowed to take in the encoded form.
+    static constexpr std::size_t MaxEncodedValueSize = 256;
+};
+
+} // namespace detail_
+
+/**
+ * This is not a message class.
+ * This is a serializable representation of a register value that can be used in register manipulation messages.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u8              type_id         Type of the value contained in this register.
+ *      1       u8[<=256]       encoded_payload Array of values whose types are defined by type_id.
+ *  -----------------------------------------------------------------------------------------------
+ *    <=257
+ */
+struct RegisterValue : public detail_::RegisterValueTypes::Variant,
+                       public detail_::RegisterValueTypes
+{
+    using Base = detail_::RegisterValueTypes::Variant;
+
+    static constexpr std::size_t MinEncodedSize = 1;
+    static constexpr std::size_t MaxEncodedSize = 257;
+
+    using Base::variant;        ///< All constructors are inherited
+    using Base::operator=;
+
     /**
-     * Shortcut for std::holds_alternative<T>(value).
+     * Shortcut for std::holds_alternative<T>(*this).
      * Usage:
      *  if (msg.is<RegisterData::U64>())
      *  {
      *      // Message contains an array of uint64
      *  }
      */
-    template <typename T> [[nodiscard]] bool is() const { return std::holds_alternative<T>(value); }
+    template <typename T> [[nodiscard]] bool is() const { return std::holds_alternative<T>(*this); }
 
     /**
-     * Shortcut for std::get_if<T>(&value).
+     * Shortcut for std::get_if<T>(this).
      * Usage:
      *  if (auto value = msg.as<RegisterData::U64>())
      *  {
      *      // Message contains an array of uint64; the pointer to that array is now stored in 'value'
      *  }
      */
+    template <typename T> [[nodiscard]]       T* as()       { return std::get_if<T>(this); }
+    template <typename T> [[nodiscard]] const T* as() const { return std::get_if<T>(this); }
+
+    /**
+     * Serializes the object into the provided encoder.
+     */
+    template <typename OutputIterator>
+    void encode(presentation::StreamEncoder<OutputIterator>& encoder) const
+    {
+        encoder.addU8(std::uint8_t(index()));
+        std::visit(VariantEncoder(encoder), *static_cast<const Base*>(this));
+    }
+
+    /**
+     * Attempts to reconstruct the state of the current object from the provided data stream.
+     * Note that the function is greedy: it takes all remaining data in the stream.
+     * It is therefore necessary to always allocate the value at the end of the message,
+     * or prepend each value with a 16-bit length field and pass an accordingly truncated
+     * stream into this function.
+     */
+    template <typename InputIterator>
+    bool tryDecode(presentation::StreamDecoder<InputIterator>& decoder)
+    {
+        if ((decoder.getRemainingLength() < MinEncodedSize) ||
+            (decoder.getRemainingLength() > MaxEncodedSize))
+        {
+            return false;
+        }
+
+        const std::uint8_t type_id = decoder.fetchU8();
+        if (type_id >= std::variant_size_v<Base>)
+        {
+            return false;
+        }
+
+        decodeByTypeID(decoder, type_id);
+        return true;
+    }
+
+private:
+    template <typename OutputIterator>
+    class VariantEncoder
+    {
+        presentation::StreamEncoder<OutputIterator>& encoder_;
+
+    public:
+        explicit VariantEncoder(presentation::StreamEncoder<OutputIterator>& stream_encoder) :
+            encoder_(stream_encoder)
+        { }
+
+        /// Empty value handler
+        void operator()(const std::monostate&) const { }
+
+        /// String handler
+        void operator()(const String& str) const
+        {
+            encoder_.addBytes(str);
+        }
+
+        /// Integer vector handler
+        template <typename T, std::size_t Capacity>
+        std::enable_if_t<std::is_integral_v<T>>
+        operator()(const util::FixedCapacityVector<T, Capacity>& vec) const
+        {
+            // The following construct cleverly avoids dependency on the native type sizes.
+            static constexpr std::size_t EncodedItemSize = MaxEncodedValueSize / Capacity;
+            for (const T& x : vec)
+            {
+                if constexpr (std::is_signed_v<T>)
+                {
+                    encoder_.template addSignedInteger<EncodedItemSize>(x);
+                }
+                else
+                {
+                    encoder_.template addUnsignedInteger<EncodedItemSize>(x);
+                }
+            }
+        }
+
+        /// Float vector handler
+        template <typename T, std::size_t Capacity>
+        std::enable_if_t<std::is_floating_point_v<T>>
+        operator()(const util::FixedCapacityVector<T, Capacity>& vec) const
+        {
+            for (const T& x : vec)
+            {
+                encoder_.template addIEEE754<MaxEncodedValueSize / Capacity>(x);
+            }
+        }
+    };
+
+    template <typename InputByteIterator, std::uint8_t TypeIDCandidate = 0>
+    void decodeByTypeID(presentation::StreamDecoder<InputByteIterator>& decoder, const std::uint8_t type_id)
+    {
+        if constexpr (TypeIDCandidate < std::variant_size_v<Base>)
+        {
+            if (type_id == TypeIDCandidate)
+            {
+                decodeSpecificValue(decoder, emplace<std::variant_alternative_t<TypeIDCandidate, Base>>());
+            }
+            else
+            {
+                decodeByTypeID<InputByteIterator, TypeIDCandidate + 1>(decoder, type_id);
+            }
+        }
+        // Otherwise the type ID is wrong. The caller is supposed to catch that; we're going to leave the value Empty.
+    }
+
+    template <typename InputByteIterator, typename T, std::size_t Capacity>
+    static void resizeVectorBeforeDecoding(presentation::StreamDecoder<InputByteIterator>& decoder,
+                                           util::FixedCapacityVector<T, Capacity>& vector)
+    {
+        // The following construct cleverly avoids dependency on the native type sizes.
+        static constexpr std::size_t EncodedItemSize = MaxEncodedValueSize / Capacity;
+        const std::size_t NumItems = std::min(Capacity, decoder.getRemainingLength() / EncodedItemSize);
+        vector.resize(NumItems);
+    }
+
+    /// Empty value handler
+    template <typename InputByteIterator>
+    static void decodeSpecificValue(presentation::StreamDecoder<InputByteIterator>&, std::monostate&) { }
+
+    /// String handler
+    template <typename InputByteIterator>
+    static void decodeSpecificValue(presentation::StreamDecoder<InputByteIterator>& decoder,
+                                    String& out_string)
+    {
+        decoder.fetchASCIIString(out_string);
+    }
+
+    /// Integer vector handler
+    template <typename InputByteIterator, typename T, std::size_t Capacity>
+    static std::enable_if_t<std::is_integral_v<T>>
+    decodeSpecificValue(presentation::StreamDecoder<InputByteIterator>& decoder,
+                        util::FixedCapacityVector<T, Capacity>& out_vector)
+    {
+        // The following construct cleverly avoids dependency on the native type sizes.
+        static constexpr std::size_t EncodedItemSize = MaxEncodedValueSize / Capacity;
+        resizeVectorBeforeDecoding(decoder, out_vector);
+        for (auto& x : out_vector)
+        {
+            if constexpr (std::is_signed_v<T>)
+            {
+                x = decoder.template fetchSignedInteger<EncodedItemSize>();
+            }
+            else
+            {
+                // Cast is needed here to properly handle booleans
+                x = T(decoder.template fetchUnsignedInteger<EncodedItemSize>());
+            }
+        }
+    }
+
+    /// Float vector handler
+    template <typename InputByteIterator, typename T, std::size_t Capacity>
+    static std::enable_if_t<std::is_floating_point_v<T>>
+    decodeSpecificValue(presentation::StreamDecoder<InputByteIterator>& decoder,
+                        util::FixedCapacityVector<T, Capacity>& out_vector)
+    {
+        resizeVectorBeforeDecoding(decoder, out_vector);
+        for (auto& x : out_vector)
+        {
+            x = decoder.template fetchIEEE754<MaxEncodedValueSize / Capacity>();
+        }
+    }
+};
+
+
+struct RegisterData : public detail_::RegisterValueTypes
+{
+    using Name = util::FixedCapacityString<93>;
+    using Value = Variant;
+
+    template <typename T> [[nodiscard]] bool is() const { return std::holds_alternative<T>(value); }
+
     template <typename T> [[nodiscard]]       T* as()       { return std::get_if<T>(&value); }
     template <typename T> [[nodiscard]] const T* as() const { return std::get_if<T>(&value); }
 
-    /**
-     * Beware that the comparison will be unreliable if the value stores floating point data.
-     */
     bool operator==(const RegisterData& rhs) const
     {
         return (name == rhs.name) && (value == rhs.value);
@@ -1881,9 +2077,6 @@ struct RegisterData
         return !this->operator==(rhs);
     }
 
-    /**
-     * Register is just two fields - name and value. It doesn't have anything else.
-     */
     Name name;
     Value value;
 

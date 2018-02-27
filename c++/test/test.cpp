@@ -1767,9 +1767,9 @@ TEST_CASE("RegisterName")
     const auto decode = [](auto... bytes) -> std::optional<N>
     {
         const auto data = makeArray(bytes...);
-        N value;
         presentation::StreamDecoder decoder(data.begin(), data.end());
-        if (N::tryDecode(decoder, value))
+        N value;
+        if (value.tryDecode(decoder))
         {
             return value;
         }
@@ -1809,4 +1809,134 @@ TEST_CASE("RegisterName")
         REQUIRE(res);
         REQUIRE(n == *res);
     }
+}
+
+
+TEST_CASE("RegisterValueEncoding")
+{
+    using standard::RegisterValue;
+
+    RegisterValue rv;
+    REQUIRE(rv.is<RegisterValue::Empty>());
+    REQUIRE(!rv.is<RegisterValue::Unstructured>());
+    REQUIRE(rv.as<RegisterValue::Empty>() != nullptr);
+    REQUIRE(rv.as<RegisterValue::String>() == nullptr);
+
+    REQUIRE(rv == RegisterValue());
+    REQUIRE((rv != RegisterValue()) == false);
+
+    const auto encode = [](const RegisterValue& rv)
+    {
+        standard::DynamicMessageBuffer<RegisterValue::MaxEncodedSize> buf;
+        presentation::StreamEncoder encoder(std::back_inserter(buf));
+        rv.encode(encoder);
+        return buf;
+    };
+
+    REQUIRE(encode(rv) == makeArray(0));
+
+    rv.emplace<RegisterValue::String>("1234567");
+    REQUIRE(!rv.is<RegisterValue::Empty>());
+    REQUIRE(rv.is<RegisterValue::String>());
+    REQUIRE(rv.as<RegisterValue::Empty>() == nullptr);
+    REQUIRE(rv.as<RegisterValue::String>() != nullptr);
+
+    {
+        const auto encoded = encode(rv);
+        std::cout << "ENCODED (value '1234567'):" << std::endl;
+        printHexDump(encoded);
+        REQUIRE(encoded == makeArray(1, 49, 50, 51, 52, 53, 54, 55));
+    }
+
+    rv.emplace<RegisterValue::U64>();
+    while (rv.as<RegisterValue::U64>()->size() != rv.as<RegisterValue::U64>()->max_size())
+    {
+        rv.as<RegisterValue::U64>()->push_back(0xDEAD'BEEF'BADC'0FFEULL);
+    }
+
+    REQUIRE(rv.as<RegisterValue::U64>()->size() == 32);
+    REQUIRE(rv.as<RegisterValue::U64>()->size() == RegisterValue::U64::Capacity);
+
+    {
+        const auto encoded = encode(rv);
+        const auto reference = makeArray(
+            8,                                                                                               // type ID
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,  // value
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,
+            0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE
+        );
+        std::cout << "ENCODED (dead beef, bad covfefe):" << std::endl;
+        printHexDump(encoded);
+        std::cout << "REFERENCE (dead beef, bad covfefe):" << std::endl;
+        printHexDump(reference);
+        REQUIRE(encoded.size() == reference.size());
+        REQUIRE(encoded == reference);
+    }
+
+    rv.emplace<RegisterValue::Boolean>({false, true, false, true});
+
+    {
+        const auto encoded = encode(rv);
+        const auto reference = makeArray(3, 0, 1, 0, 1);
+        std::cout << "ENCODED (bool):" << std::endl;
+        printHexDump(encoded);
+        std::cout << "REFERENCE (bool):" << std::endl;
+        printHexDump(reference);
+        REQUIRE(encoded.size() == reference.size());
+        REQUIRE(encoded == reference);
+    }
+
+    std::uint8_t demo_buffer[] = {1, 2, 3, 4, 5};
+
+    rv.emplace<RegisterValue::Unstructured>(5, &demo_buffer[0]);
+
+    {
+        const auto encoded = encode(rv);
+        const auto reference = makeArray(2, 1, 2, 3, 4, 5);
+        std::cout << "ENCODED (unstructured):" << std::endl;
+        printHexDump(encoded);
+        std::cout << "REFERENCE (unstructured):" << std::endl;
+        printHexDump(reference);
+        REQUIRE(encoded.size() == reference.size());
+        REQUIRE(encoded == reference);
+    }
+}
+
+
+TEST_CASE("RegisterValueDecoding")
+{
+    using standard::RegisterValue;
+
+    const auto go = [](auto... values) -> std::optional<RegisterValue>
+    {
+        const auto data = makeArray(values...);
+        RegisterValue out;
+        presentation::StreamDecoder decoder(data.begin(), data.end());
+        if (out.tryDecode(decoder))
+        {
+            return out;
+        }
+        return {};
+    };
+
+    REQUIRE_FALSE(go());
+    REQUIRE      (go(0));
+    REQUIRE      (go(0)->is<RegisterValue::Empty>());
+    // Payload ignored for empty register values:
+    REQUIRE      (go(0, 1, 2, 3)->is<RegisterValue::Empty>());
+    REQUIRE_FALSE(go(99));                  // Bad type ID
+    REQUIRE      (go(1, 48)->as<RegisterValue::String>()->operator==("0"));
 }
