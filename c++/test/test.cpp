@@ -1712,7 +1712,15 @@ TEST_CASE("RegisterDataEncodingDecodingLoop-slow")
         encoded.resize(synthesized.encode(encoded.begin()));
 
         const auto maybe_decoded = RegisterData::tryDecode(encoded.begin(), encoded.end());
-        REQUIRE(maybe_decoded);
+        if (!maybe_decoded)
+        {
+            std::cout << "MESSAGE DECODING FAILED; current iteration: " << ago << std::endl;
+            std::cout << "synthesized:" << std::endl;
+            printRegisterData(synthesized);
+            std::cout << "encoded:" << std::endl;
+            printHexDump(encoded);
+            FAIL("Could not decode message");
+        }
         const RegisterData decoded = *maybe_decoded;
 
         REQUIRE(decoded.name == synthesized.name);

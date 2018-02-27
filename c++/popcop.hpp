@@ -1743,12 +1743,12 @@ struct RegisterName : public util::FixedCapacityString<93>
 
     /**
      * Attempts to reconstruct the state of the current object from the provided data stream.
+     * Maximum size is not checked because this is not a greedy decoder, i.e. there may be more data after the string.
      */
     template <typename InputIterator>
     bool tryDecode(presentation::StreamDecoder<InputIterator>& decoder)
     {
-        if ((decoder.getRemainingLength() < MinEncodedSize) ||
-            (decoder.getRemainingLength() > MaxEncodedSize))
+        if (decoder.getRemainingLength() < MinEncodedSize)
         {
             return false;
         }
