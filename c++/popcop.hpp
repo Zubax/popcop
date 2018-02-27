@@ -1864,13 +1864,33 @@ protected:  // This type cannot be instantiated directly
 struct RegisterValue : public detail_::RegisterValueTypes::Variant,
                        public detail_::RegisterValueTypes
 {
-    using Base = detail_::RegisterValueTypes::Variant;
+    /**
+     * Alias of the underlying std::variant<>
+     */
+    using Variant = detail_::RegisterValueTypes::Variant;
 
+    /**
+     * Size limits of the encoded representation.
+     */
     static constexpr std::size_t MinEncodedSize = 1;
     static constexpr std::size_t MaxEncodedSize = 257;
 
-    using Base::variant;        ///< All constructors are inherited
-    using Base::operator=;
+    /**
+     * Number of types that are defined for this std::variant<>.
+     */
+    static constexpr std::uint8_t NumberOfVariants = std::uint8_t(std::variant_size_v<Variant>);
+
+    /**
+     * Maps variant index to type at compile time.
+     */
+    template <std::size_t VariantIndex>
+    using VariantTypeAtIndex = std::variant_alternative_t<VariantIndex, Variant>;
+
+    /**
+     * All constructors and assignment operators are inherited from std::variant<>.
+     */
+    using Variant::variant;
+    using Variant::operator=;
 
     /**
      * Shortcut for std::holds_alternative<T>(*this).
@@ -1894,13 +1914,22 @@ struct RegisterValue : public detail_::RegisterValueTypes::Variant,
     template <typename T> [[nodiscard]] const T* as() const { return std::get_if<T>(this); }
 
     /**
+     * A simple wrapper over std::visit<>(), refer to that for more info.
+     */
+    template <typename Visitor>
+    auto visit(Visitor&& vis) const
+    {
+        return std::visit(std::forward<Visitor>(vis), *static_cast<const Variant*>(this));
+    }
+
+    /**
      * Serializes the object into the provided encoder.
      */
     template <typename OutputIterator>
     void encode(presentation::StreamEncoder<OutputIterator>& encoder) const
     {
         encoder.addU8(std::uint8_t(index()));
-        std::visit(VariantEncoder(encoder), *static_cast<const Base*>(this));
+        visit(VariantEncoder(encoder));
     }
 
     /**
@@ -1913,14 +1942,19 @@ struct RegisterValue : public detail_::RegisterValueTypes::Variant,
     template <typename InputIterator>
     bool tryDecode(presentation::StreamDecoder<InputIterator>& decoder)
     {
-        if ((decoder.getRemainingLength() < MinEncodedSize) ||
-            (decoder.getRemainingLength() > MaxEncodedSize))
+        if (decoder.getRemainingLength() < MinEncodedSize)
+        {
+            emplace<Empty>();       // No payload is treated as empty value as a last resort (not required)
+            return true;
+        }
+
+        if (decoder.getRemainingLength() > MaxEncodedSize)
         {
             return false;
         }
 
         const std::uint8_t type_id = decoder.fetchU8();
-        if (type_id >= std::variant_size_v<Base>)
+        if (type_id >= NumberOfVariants)
         {
             return false;
         }
@@ -1984,11 +2018,11 @@ private:
     template <typename InputByteIterator, std::uint8_t TypeIDCandidate = 0>
     void decodeByTypeID(presentation::StreamDecoder<InputByteIterator>& decoder, const std::uint8_t type_id)
     {
-        if constexpr (TypeIDCandidate < std::variant_size_v<Base>)
+        if constexpr (TypeIDCandidate < NumberOfVariants)
         {
             if (type_id == TypeIDCandidate)
             {
-                decodeSpecificValue(decoder, emplace<std::variant_alternative_t<TypeIDCandidate, Base>>());
+                decodeSpecificValue(decoder, emplace<VariantTypeAtIndex<TypeIDCandidate>>());
             }
             else
             {
@@ -2057,223 +2091,32 @@ private:
     }
 };
 
-
-struct RegisterData : public detail_::RegisterValueTypes
-{
-    using Name = util::FixedCapacityString<93>;
-    using Value = Variant;
-
-    template <typename T> [[nodiscard]] bool is() const { return std::holds_alternative<T>(value); }
-
-    template <typename T> [[nodiscard]]       T* as()       { return std::get_if<T>(&value); }
-    template <typename T> [[nodiscard]] const T* as() const { return std::get_if<T>(&value); }
-
-    bool operator==(const RegisterData& rhs) const
-    {
-        return (name == rhs.name) && (value == rhs.value);
-    }
-    bool operator!=(const RegisterData& rhs) const
-    {
-        return !this->operator==(rhs);
-    }
-
-    Name name;
-    Value value;
-
-protected:
-    static constexpr std::size_t MinEncodedSize = 2;        ///< No name, no value
-    static constexpr std::size_t MaxEncodedSize = 351;      ///< Longest name, longest value
-
-    /// The number of bytes the value is allowed to take in the encoded form.
-    static constexpr std::size_t MaxEncodedValueSize = 256;
-
-    template <typename OutputIterator>
-    void encode(presentation::StreamEncoder<OutputIterator>& encoder) const
-    {
-        encoder.addU8(std::uint8_t(value.index()));
-        encoder.addU8(std::uint8_t(name.length()));
-        encoder.addBytes(name);
-        std::visit(ValueEncoder(encoder), value);
-    }
-
-    template <typename InputIterator>
-    static bool tryDecode(presentation::StreamDecoder<InputIterator>& decoder, RegisterData& out_msg)
-    {
-        if ((decoder.getRemainingLength() < MinEncodedSize) ||
-            (decoder.getRemainingLength() > MaxEncodedSize))
-        {
-            return false;
-        }
-
-        const std::uint8_t type_id = decoder.fetchU8();
-        if (type_id >= std::variant_size_v<Value>)
-        {
-            return false;
-        }
-
-        const std::uint8_t name_len = decoder.fetchU8();
-        if (name_len > Name::Capacity)
-        {
-            return false;
-        }
-
-        if (decoder.getRemainingLength() < name_len)
-        {
-            return false;
-        }
-
-        out_msg.name.clear();
-        for (std::uint8_t i = 0; i < name_len; i++)
-        {
-            out_msg.name.push_back(char(decoder.fetchU8()));
-        }
-
-        decodeValueByTypeID(decoder, out_msg.value, type_id);
-
-        return true;
-    }
-
-private:
-    template <typename OutputIterator>
-    class ValueEncoder
-    {
-        presentation::StreamEncoder<OutputIterator>& encoder_;
-
-    public:
-        explicit ValueEncoder(presentation::StreamEncoder<OutputIterator>& stream_encoder) :
-            encoder_(stream_encoder)
-        { }
-
-        /// Empty value handler
-        void operator()(const std::monostate&) const { }
-
-        /// String handler
-        void operator()(const String& str) const
-        {
-            encoder_.addBytes(str);
-        }
-
-        /// Integer vector handler
-        template <typename T, std::size_t Capacity>
-        std::enable_if_t<std::is_integral_v<T>>
-        operator()(const util::FixedCapacityVector<T, Capacity>& vec) const
-        {
-            // The following construct cleverly avoids dependency on the native type sizes.
-            static constexpr std::size_t EncodedItemSize = MaxEncodedValueSize / Capacity;
-            for (const T& x : vec)
-            {
-                if constexpr (std::is_signed_v<T>)
-                {
-                    encoder_.template addSignedInteger<EncodedItemSize>(x);
-                }
-                else
-                {
-                    encoder_.template addUnsignedInteger<EncodedItemSize>(x);
-                }
-            }
-        }
-
-        /// Float vector handler
-        template <typename T, std::size_t Capacity>
-        std::enable_if_t<std::is_floating_point_v<T>>
-        operator()(const util::FixedCapacityVector<T, Capacity>& vec) const
-        {
-            for (const T& x : vec)
-            {
-                encoder_.template addIEEE754<MaxEncodedValueSize / Capacity>(x);
-            }
-        }
-    };
-
-    template <typename InputByteIterator, std::uint8_t TypeIDCandidate = 0>
-    static void decodeValueByTypeID(presentation::StreamDecoder<InputByteIterator>& decoder,
-                                    Value& out_value,
-                                    const std::uint8_t type_id)
-    {
-        if constexpr (TypeIDCandidate < std::variant_size_v<Value>)
-        {
-            if (type_id == TypeIDCandidate)
-            {
-                decodeSpecificValue(decoder, out_value.emplace<std::variant_alternative_t<TypeIDCandidate, Value>>());
-            }
-            else
-            {
-                decodeValueByTypeID<InputByteIterator, TypeIDCandidate + 1>(decoder, out_value, type_id);
-            }
-        }
-        // Otherwise the type ID is wrong. The caller is supposed to catch that; we're going to leave the value Empty.
-    }
-
-    template <typename InputByteIterator, typename T, std::size_t Capacity>
-    static void resizeVectorBeforeDecoding(presentation::StreamDecoder<InputByteIterator>& decoder,
-                                           util::FixedCapacityVector<T, Capacity>& vector)
-    {
-        // The following construct cleverly avoids dependency on the native type sizes.
-        static constexpr std::size_t EncodedItemSize = MaxEncodedValueSize / Capacity;
-        const std::size_t NumItems = std::min(Capacity, decoder.getRemainingLength() / EncodedItemSize);
-        vector.resize(NumItems);
-    }
-
-    /// Empty value handler
-    template <typename InputByteIterator>
-    static void decodeSpecificValue(presentation::StreamDecoder<InputByteIterator>&, std::monostate&) { }
-
-    /// String handler
-    template <typename InputByteIterator>
-    static void decodeSpecificValue(presentation::StreamDecoder<InputByteIterator>& decoder,
-                                    String& out_string)
-    {
-        decoder.fetchASCIIString(out_string);
-    }
-
-    /// Integer vector handler
-    template <typename InputByteIterator, typename T, std::size_t Capacity>
-    static std::enable_if_t<std::is_integral_v<T>>
-    decodeSpecificValue(presentation::StreamDecoder<InputByteIterator>& decoder,
-                        util::FixedCapacityVector<T, Capacity>& out_vector)
-    {
-        // The following construct cleverly avoids dependency on the native type sizes.
-        static constexpr std::size_t EncodedItemSize = MaxEncodedValueSize / Capacity;
-        resizeVectorBeforeDecoding(decoder, out_vector);
-        for (auto& x : out_vector)
-        {
-            if constexpr (std::is_signed_v<T>)
-            {
-                x = decoder.template fetchSignedInteger<EncodedItemSize>();
-            }
-            else
-            {
-                // Cast is needed here to properly handle booleans
-                x = T(decoder.template fetchUnsignedInteger<EncodedItemSize>());
-            }
-        }
-    }
-
-    /// Float vector handler
-    template <typename InputByteIterator, typename T, std::size_t Capacity>
-    static std::enable_if_t<std::is_floating_point_v<T>>
-    decodeSpecificValue(presentation::StreamDecoder<InputByteIterator>& decoder,
-                        util::FixedCapacityVector<T, Capacity>& out_vector)
-    {
-        resizeVectorBeforeDecoding(decoder, out_vector);
-        for (auto& x : out_vector)
-        {
-            x = decoder.template fetchIEEE754<MaxEncodedValueSize / Capacity>();
-        }
-    }
-};
-
 /**
- * The layout is exactly equivalent to RegisterData, no additional fields are defined.
+ * This is a simple composition of RegisterName and RegisterValue.
  * Register read request if the value is empty.
  * Register write request if the value is not empty.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u8              name_length     Length of the next field.
+ *      1       u8[<=93]        name            ASCII name, not terminated - see the previous field.
+ *      1..94   u8              type_id         Type of the value contained in this message.
+ *      2..95   u8[<=256]       encoded_payload Array of values whose types are defined by type_id.
+ *  -----------------------------------------------------------------------------------------------
+ *    <=351
  */
-struct RegisterDataRequestMessage : public RegisterData
+struct RegisterDataRequestMessage
 {
-    using RegisterData::MinEncodedSize;
-    using RegisterData::MaxEncodedSize;
+    static constexpr std::size_t MinEncodedSize = 2;
+    static constexpr std::size_t MaxEncodedSize = 351;
 
     static constexpr MessageID ID = MessageID::RegisterDataRequest;
+
+    /**
+     * All fields of this message type.
+     */
+    RegisterName name;
+    RegisterValue value;
 
     /**
      * Encodes the message into the provided sequential iterator.
@@ -2286,7 +2129,8 @@ struct RegisterDataRequestMessage : public RegisterData
     {
         presentation::StreamEncoder encoder(begin);
         MessageHeader(ID).encode(encoder);
-        RegisterData::encode(encoder);
+        name.encode(encoder);
+        value.encode(encoder);
         assert(encoder.getOffset() >= (MinEncodedSize + MessageHeader::Size));
         assert(encoder.getOffset() <= (MaxEncodedSize + MessageHeader::Size));
         return encoder.getOffset();
@@ -2321,79 +2165,17 @@ struct RegisterDataRequestMessage : public RegisterData
         }
 
         RegisterDataRequestMessage msg;
-        if (RegisterData::tryDecode(decoder, msg))
-        {
-            return msg;
-        }
-
-        return {};
-    }
-};
-
-/**
- * The layout is exactly equivalent to RegisterData, no additional fields are defined.
- * Register does not exist if the value is empty.
- * Register exists if the value is not empty.
- */
-struct RegisterDataResponseMessage : public RegisterData
-{
-    using RegisterData::MinEncodedSize;
-    using RegisterData::MaxEncodedSize;
-
-    static constexpr MessageID ID = MessageID::RegisterDataResponse;
-
-    /**
-     * Encodes the message into the provided sequential iterator.
-     * The iterator can encode and emit the message on the fly - that would be highly efficient;
-     * see @ref transport::StreamEmitter.
-     * Returns the number of bytes in the encoded stream.
-     */
-    template <typename OutputIterator>
-    std::size_t encode(OutputIterator begin) const
-    {
-        presentation::StreamEncoder encoder(begin);
-        MessageHeader(ID).encode(encoder);
-        RegisterData::encode(encoder);
-        assert(encoder.getOffset() >= (MinEncodedSize + MessageHeader::Size));
-        assert(encoder.getOffset() <= (MaxEncodedSize + MessageHeader::Size));
-        return encoder.getOffset();
-    }
-
-    /**
-     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
-     * This version encodes the message into a fixed capacity array and returns it by value.
-     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
-     */
-    DynamicMessageBuffer<MaxEncodedSize> encode() const
-    {
-        DynamicMessageBuffer<MaxEncodedSize> buf;
-        const std::size_t size = encode(std::back_inserter(buf));
-        (void) size;
-        assert(size == buf.size());
-        return buf;
-    }
-
-    /**
-     * Attempts to decode a message from the provided standard frame.
-     * The message ID value in the header will be checked.
-     */
-    template <typename InputIterator>
-    static std::optional<RegisterDataResponseMessage> tryDecode(InputIterator begin, InputIterator end)
-    {
-        presentation::StreamDecoder decoder(begin, end);
-        const auto header = MessageHeader::tryDecode(decoder);
-        if (!header || (header->message_id != ID))
+        if (!msg.name.tryDecode(decoder))
         {
             return {};
         }
 
-        RegisterDataResponseMessage msg;
-        if (RegisterData::tryDecode(decoder, msg))
+        if (!msg.value.tryDecode(decoder))
         {
-            return msg;
+            return {};
         }
 
-        return {};
+        return msg;
     }
 };
 
