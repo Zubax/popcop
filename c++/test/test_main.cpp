@@ -1508,14 +1508,14 @@ TEST_CASE("RegisterDataEncoding")
 TEST_CASE("RegisterDataDecoding")
 {
     using standard::MessageID;
-    using standard::RegisterDataResponseMessage;
+    using standard::RegisterDataRequestMessage;
 
-    constexpr std::uint8_t M = std::uint8_t(MessageID::RegisterDataResponse);
+    constexpr std::uint8_t M = std::uint8_t(MessageID::RegisterDataRequest);
 
     const auto go = [](auto... values)
     {
         const auto data = makeArray(values...);
-        return RegisterDataResponseMessage::tryDecode(data.begin(), data.end());
+        return RegisterDataRequestMessage::tryDecode(data.begin(), data.end());
     };
 
     REQUIRE_FALSE(go());
@@ -1533,9 +1533,9 @@ TEST_CASE("RegisterDataDecoding")
 
     REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0));
     REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0)->name.empty());
-    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0)->is<RegisterDataResponseMessage::Empty>());
+    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0)->is<RegisterDataRequestMessage::Empty>());
     // Payload ignored for empty register values:
-    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3)->is<RegisterDataResponseMessage::Empty>());
+    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3)->is<RegisterDataRequestMessage::Empty>());
 
     REQUIRE_FALSE(go(M, 0, 0, 0, 0, 0, 0, 0,
                      99, 0));                  // Bad type ID
@@ -1555,7 +1555,7 @@ TEST_CASE("RegisterDataDecoding")
     REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0,
                      1, 1, 49, 48)->name == "1");
     REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0,
-                     1, 1, 49, 48)->as<RegisterDataResponseMessage::String>()->operator==("0"));
+                     1, 1, 49, 48)->as<RegisterDataRequestMessage::String>()->operator==("0"));
 }
 
 
@@ -1677,7 +1677,7 @@ static void printRegisterData(const standard::RegisterData& rd)
 
 TEST_CASE("RegisterDataEncodingDecodingLoop")
 {
-    using RegisterData = standard::RegisterDataResponseMessage;
+    using RegisterData = standard::RegisterDataRequestMessage;
 
     std::cout << "Below are several randomly generated register data structs printed for debugging needs:\n"
               << "---------\n";
@@ -1688,18 +1688,22 @@ TEST_CASE("RegisterDataEncodingDecodingLoop")
     }
     std::cout << "---------\nEnd of randomly generated registers" << std::endl;
 
-    constexpr long long NumberOfIterations = 10'000'000;
+    constexpr long long NumberOfIterations = 3'000'000;
     std::size_t real_comparison_failures = 0;
 
     for (long long ago = 0; ago < NumberOfIterations; ago++)
     {
-        if (ago % 100000 == 0)
+        if (ago % 100'000 == 0)
         {
             std::cout << "\r" << ago << "/" << NumberOfIterations << "  \r" << std::flush;
         }
 
         const RegisterData synthesized = makeRandomRegisterData<RegisterData>();
-        const auto encoded = synthesized.encode();
+
+        // Testing the alternative encoding API
+        standard::DynamicMessageBuffer<RegisterData::MaxEncodedSize> encoded;
+        encoded.resize(encoded.capacity());
+        encoded.resize(synthesized.encode(encoded.begin()));
 
         const auto maybe_decoded = RegisterData::tryDecode(encoded.begin(), encoded.end());
         REQUIRE(maybe_decoded);

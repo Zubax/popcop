@@ -1247,6 +1247,11 @@ public:
     }
 
     std::size_t getOffset() const { return length_; }
+
+    StreamEncoder<OutputByteIterator> makeNew() const
+    {
+        return StreamEncoder<OutputByteIterator>(output_);
+    }
 };
 
 /**
@@ -1386,6 +1391,11 @@ public:
     {
         return std::size_t(std::max<std::int64_t>(0, std::distance(input_, end_)));
     }
+
+    StreamDecoder<InputByteIterator> makeNew() const
+    {
+        return StreamDecoder<InputByteIterator>(input_, end_);
+    }
 };
 
 }   // namespace presentation
@@ -1405,9 +1415,13 @@ static constexpr std::chrono::seconds DefaultStandardRequestTimeout = std::chron
  */
 enum class MessageID : std::uint16_t
 {
-    NodeInfo                = 0,
-    RegisterDataRequest     = 1,
-    RegisterDataResponse    = 2,
+    NodeInfo                        = 0,
+    RegisterDataRequest             = 1,
+    RegisterDataResponse            = 2,
+    RegisterDiscoveryRequest        = 3,
+    RegisterDiscoveryResponse       = 4,
+    RegisterTracingSetup            = 5,
+    RegisterTracingEvent            = 6,
 };
 
 /**
@@ -1433,25 +1447,23 @@ struct MessageHeader
     explicit MessageHeader(MessageID mid) : message_id(mid) { }
 
     /**
-     * Encodes the message into the provided sequential iterator.
-     * The iterator can encode and emit the message on the fly - that would be highly efficient.
+     * Encodes the message into the provided stream encoder.
+     * The encoder's underlying iterator can encode and emit the message on the fly - that would be highly efficient.
      */
     template <typename OutputIterator>
-    void encode(OutputIterator begin) const
+    void encode(presentation::StreamEncoder<OutputIterator>& encoder) const
     {
-        presentation::StreamEncoder encoder(begin);
         encoder.addU16(std::uint16_t(message_id));
         encoder.fillUpToOffset(8);
-        assert(encoder.getOffset() == 8);
     }
 
     template <typename InputIterator>
-    static std::optional<MessageHeader> tryDecode(InputIterator begin, InputIterator end)
+    static std::optional<MessageHeader> tryDecode(presentation::StreamDecoder<InputIterator>& decoder)
     {
-        presentation::StreamDecoder decoder(begin, end);
         if (decoder.getRemainingLength() >= Size)
         {
             MessageHeader hdr(MessageID(decoder.fetchU16()));
+            decoder.skipUpToOffset(8);
             return hdr;
         }
         else
@@ -1462,10 +1474,17 @@ struct MessageHeader
 };
 
 /**
- * A helper type that can be used by message definitions.
+ * Static buffer type that can be used by fixed-size message definitions.
+ */
+template <std::size_t MessageSizeNotIncludingHeader>
+using StaticMessageBuffer = std::array<std::uint8_t, MessageSizeNotIncludingHeader + MessageHeader::Size>;
+
+/**
+ * Resizeable buffer type that can be used by variable-length message definitions.
  */
 template <std::size_t MaxMessageSizeNotIncludingHeader>
-using MessageBuffer = util::FixedCapacityVector<std::uint8_t, MaxMessageSizeNotIncludingHeader + MessageHeader::Size>;
+using DynamicMessageBuffer = util::FixedCapacityVector<std::uint8_t,
+                                                       MaxMessageSizeNotIncludingHeader + MessageHeader::Size>;
 
 /**
  * Node info message representation.
@@ -1535,12 +1554,14 @@ struct NodeInfoMessage
      * Encodes the message into the provided sequential iterator.
      * The iterator can encode and emit the message on the fly - that would be highly efficient;
      * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
      */
     template <typename OutputIterator>
-    void encode(OutputIterator begin) const
+    std::size_t encode(OutputIterator begin) const
     {
-        MessageHeader(MessageID::NodeInfo).encode(begin);
-        presentation::StreamEncoder encoder(begin);     // Creating new encoder in order to exclude the header offset
+        presentation::StreamEncoder header_encoder(begin);
+        MessageHeader(MessageID::NodeInfo).encode(header_encoder);
+        auto encoder = header_encoder.makeNew();     // Creating new encoder in order to exclude the header offset
 
         encoder.addU64(software_version.image_crc ? *software_version.image_crc : 0);
         encoder.addU32(software_version.vcs_commit_id);
@@ -1589,6 +1610,8 @@ struct NodeInfoMessage
         assert(encoder.getOffset() >= MinEncodedSize);
         assert(encoder.getOffset() <= MaxEncodedSize);
         assert(encoder.getOffset() ==  MinEncodedSize + certificate_of_authenticity.size());
+
+        return header_encoder.getOffset() + encoder.getOffset();
     }
 
     /**
@@ -1596,10 +1619,12 @@ struct NodeInfoMessage
      * This version encodes the message into a fixed capacity array and returns it by value.
      * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
      */
-    MessageBuffer<MaxEncodedSize> encode() const
+    DynamicMessageBuffer<MaxEncodedSize> encode() const
     {
-        MessageBuffer<MaxEncodedSize> out;
-        encode(std::back_inserter(out));
+        DynamicMessageBuffer<MaxEncodedSize> out;
+        const std::size_t size = encode(std::back_inserter(out));
+        (void) size;
+        assert(size == out.size());
         return out;
     }
 
@@ -1611,13 +1636,14 @@ struct NodeInfoMessage
     template <typename InputIterator>
     static std::optional<NodeInfoMessage> tryDecode(InputIterator begin, InputIterator end)
     {
-        const auto header = MessageHeader::tryDecode(begin, end);
+        presentation::StreamDecoder header_decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(header_decoder);
         if (!header || (header->message_id != MessageID::NodeInfo))
         {
             return {};
         }
 
-        presentation::StreamDecoder decoder(begin + MessageHeader::Size, end);
+        auto decoder = header_decoder.makeNew();     // Creating a new one to exclude header offset
         if ((decoder.getRemainingLength() < MinEncodedSize) ||
             (decoder.getRemainingLength() > MaxEncodedSize))
         {
@@ -1817,21 +1843,15 @@ protected:
     template <typename OutputIterator>
     void encode(presentation::StreamEncoder<OutputIterator>& encoder) const
     {
-        assert(encoder.getOffset() == 0);                   // An empty encoder is expected
         encoder.addU8(std::uint8_t(value.index()));
         encoder.addU8(std::uint8_t(name.length()));
         encoder.addBytes(name);
-        assert(encoder.getOffset() == (2 + name.length()));
         std::visit(ValueEncoder(encoder), value);
-        assert(encoder.getOffset() >= MinEncodedSize);
-        assert(encoder.getOffset() <= MaxEncodedSize);
     }
 
     template <typename InputIterator>
     static bool tryDecode(presentation::StreamDecoder<InputIterator>& decoder, RegisterData& out_msg)
     {
-        assert(decoder.getOffset() == 0);                   // An empty decoder is expected
-
         if ((decoder.getRemainingLength() < MinEncodedSize) ||
             (decoder.getRemainingLength() > MaxEncodedSize))
         {
@@ -1860,8 +1880,6 @@ protected:
         {
             out_msg.name.push_back(char(decoder.fetchU8()));
         }
-
-        assert(decoder.getOffset() == (2U + name_len));
 
         decodeValueByTypeID(decoder, out_msg.value, type_id);
 
@@ -1999,24 +2017,32 @@ private:
 };
 
 /**
+ * The layout is exactly equivalent to RegisterData, no additional fields are defined.
  * Register read request if the value is empty.
  * Register write request if the value is not empty.
  */
 struct RegisterDataRequestMessage : public RegisterData
 {
+    using RegisterData::MinEncodedSize;
+    using RegisterData::MaxEncodedSize;
+
     static constexpr MessageID ID = MessageID::RegisterDataRequest;
 
     /**
      * Encodes the message into the provided sequential iterator.
      * The iterator can encode and emit the message on the fly - that would be highly efficient;
      * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
      */
     template <typename OutputIterator>
-    void encode(OutputIterator begin) const
+    std::size_t encode(OutputIterator begin) const
     {
-        MessageHeader(ID).encode(begin);
         presentation::StreamEncoder encoder(begin);
+        MessageHeader(ID).encode(encoder);
         RegisterData::encode(encoder);
+        assert(encoder.getOffset() >= (MinEncodedSize + MessageHeader::Size));
+        assert(encoder.getOffset() <= (MaxEncodedSize + MessageHeader::Size));
+        return encoder.getOffset();
     }
 
     /**
@@ -2024,28 +2050,29 @@ struct RegisterDataRequestMessage : public RegisterData
      * This version encodes the message into a fixed capacity array and returns it by value.
      * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
      */
-    MessageBuffer<MaxEncodedSize> encode() const
+    DynamicMessageBuffer<MaxEncodedSize> encode() const
     {
-        MessageBuffer<MaxEncodedSize> buf;
-        encode(std::back_inserter(buf));
+        DynamicMessageBuffer<MaxEncodedSize> buf;
+        const std::size_t size = encode(std::back_inserter(buf));
+        (void) size;
+        assert(size == buf.size());
         return buf;
     }
 
     /**
      * Attempts to decode a message from the provided standard frame.
      * The message ID value in the header will be checked.
-     * The returned value is true if the message has been parsed successfully, false otherwise.
      */
     template <typename InputIterator>
     static std::optional<RegisterDataRequestMessage> tryDecode(InputIterator begin, InputIterator end)
     {
-        const auto header = MessageHeader::tryDecode(begin, end);
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
         if (!header || (header->message_id != ID))
         {
             return {};
         }
 
-        presentation::StreamDecoder decoder(begin + MessageHeader::Size, end);
         RegisterDataRequestMessage msg;
         if (RegisterData::tryDecode(decoder, msg))
         {
@@ -2057,24 +2084,32 @@ struct RegisterDataRequestMessage : public RegisterData
 };
 
 /**
+ * The layout is exactly equivalent to RegisterData, no additional fields are defined.
  * Register does not exist if the value is empty.
  * Register exists if the value is not empty.
  */
 struct RegisterDataResponseMessage : public RegisterData
 {
+    using RegisterData::MinEncodedSize;
+    using RegisterData::MaxEncodedSize;
+
     static constexpr MessageID ID = MessageID::RegisterDataResponse;
 
     /**
      * Encodes the message into the provided sequential iterator.
      * The iterator can encode and emit the message on the fly - that would be highly efficient;
      * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
      */
     template <typename OutputIterator>
-    void encode(OutputIterator begin) const
+    std::size_t encode(OutputIterator begin) const
     {
-        MessageHeader(ID).encode(begin);
         presentation::StreamEncoder encoder(begin);
+        MessageHeader(ID).encode(encoder);
         RegisterData::encode(encoder);
+        assert(encoder.getOffset() >= (MinEncodedSize + MessageHeader::Size));
+        assert(encoder.getOffset() <= (MaxEncodedSize + MessageHeader::Size));
+        return encoder.getOffset();
     }
 
     /**
@@ -2082,28 +2117,29 @@ struct RegisterDataResponseMessage : public RegisterData
      * This version encodes the message into a fixed capacity array and returns it by value.
      * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
      */
-    MessageBuffer<MaxEncodedSize> encode() const
+    DynamicMessageBuffer<MaxEncodedSize> encode() const
     {
-        MessageBuffer<MaxEncodedSize> buf;
-        encode(std::back_inserter(buf));
+        DynamicMessageBuffer<MaxEncodedSize> buf;
+        const std::size_t size = encode(std::back_inserter(buf));
+        (void) size;
+        assert(size == buf.size());
         return buf;
     }
 
     /**
      * Attempts to decode a message from the provided standard frame.
      * The message ID value in the header will be checked.
-     * The returned value is true if the message has been parsed successfully, false otherwise.
      */
     template <typename InputIterator>
     static std::optional<RegisterDataResponseMessage> tryDecode(InputIterator begin, InputIterator end)
     {
-        const auto header = MessageHeader::tryDecode(begin, end);
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
         if (!header || (header->message_id != ID))
         {
             return {};
         }
 
-        presentation::StreamDecoder decoder(begin + MessageHeader::Size, end);
         RegisterDataResponseMessage msg;
         if (RegisterData::tryDecode(decoder, msg))
         {
