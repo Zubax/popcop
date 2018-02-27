@@ -516,7 +516,7 @@ inline auto getRandomNumber()
 }
 
 
-TEST_CASE("EmitterParserLoop")
+TEST_CASE("EmitterParserLoop-slow")
 {
     std::srand(unsigned(std::time(nullptr)));
 
@@ -961,7 +961,7 @@ TEST_CASE("StreamEncoder")
 }
 
 
-TEST_CASE("StreamDecoder")
+TEST_CASE("StreamDecoder-slow")
 {
     constexpr auto BufferSize = 400'000'000;    ///< This might be too much for some systems?
 
@@ -1683,7 +1683,7 @@ static void printRegisterData(const standard::RegisterData& rd)
 }
 
 
-TEST_CASE("RegisterDataEncodingDecodingLoop")
+TEST_CASE("RegisterDataEncodingDecodingLoop-slow")
 {
     using RegisterData = standard::RegisterDataRequestMessage;
 

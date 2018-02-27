@@ -33,7 +33,7 @@ matrix:
             - g++-7
       script:
         - CC=gcc-7 && CXX=g++-7 && cd c++/test/ && cmake . && make
-        - ./popcop_test
+        - ./popcop_test --rng-seed time
 
 #
 # Clang is commented out - it can't compile Popcop because the compiler is broken.
@@ -54,4 +54,4 @@ matrix:
 #        - cd c++/test/
 #        - cmake -DCMAKE_C_COMPILER=clang-5.0 -DCMAKE_CXX_COMPILER=clang++-5.0 .
 #        - make
-#        - ./popcop_test
+#        - ./popcop_test --rng-seed time
