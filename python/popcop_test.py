@@ -355,10 +355,10 @@ class TestSerialMultiprocessing(unittest.TestCase):
                 self.assertEqual(msg.software_image_crc, i)
 
                 if byte_i == 0:
-                    print('Received %.0f%% (%d/%d) of messages...' %
-                          (100 * (i + 1) / num_messages, i + 1, num_messages))
+                    print('\rReceived %.0f%% (%d/%d) of messages...' %
+                          (100 * (i + 1) / num_messages, i + 1, num_messages), end='   \r', flush=True)
 
-            print('High throughput test succeeded')
+            print('\nHigh throughput test succeeded')
             thd.join()
 
             msg = channel.receive(timeout=1)
