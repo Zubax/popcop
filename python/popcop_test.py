@@ -246,6 +246,32 @@ class TestStandardMessages(unittest.TestCase):
                          popcop.transport.encode(popcop.STANDARD_FRAME_TYPE_CODE,
                                                  carefully_crafted_message))
 
+    def test_register_data_request(self):
+        from popcop.transport import ReceivedFrame
+        from popcop.standard.register import DataRequestMessage, ValueType
+        from popcop import STANDARD_FRAME_TYPE_CODE
+
+        self.assertEqual(DataRequestMessage()._encode(), bytes([0, 0]))
+        self.assertEqual(DataRequestMessage(name='Hello')._encode(), b'\x05Hello\x00')
+        self.assertEqual(DataRequestMessage(value=123, type_id=ValueType.I8). _encode(),
+                         bytes([0, 7, 123]))
+
+        msg = popcop.standard.decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE,
+                                                   bytes([1, 0, 0, 0]),
+                                                   0))
+        self.assertIsInstance(msg, DataRequestMessage)
+        self.assertEqual(msg.name, '')
+        self.assertEqual(msg.type_id, ValueType.EMPTY)
+        self.assertIsNone(msg.value)
+
+        msg = popcop.standard.decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE,
+                                                   bytes([1, 0, 3, 48, 49, 50, 1, 52, 53, 54]),
+                                                   0))
+        self.assertIsInstance(msg, DataRequestMessage)
+        self.assertEqual(msg.name, '012')
+        self.assertEqual(msg.type_id, ValueType.STRING)
+        self.assertEqual(msg.value, '456')
+
 
 @unittest.skipUnless(serial, 'PySerial is not available. Please install it to test this feature.')
 class TestSerialMultiprocessing(unittest.TestCase):
