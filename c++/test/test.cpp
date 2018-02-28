@@ -1309,28 +1309,6 @@ TEST_CASE("RegisterDataEncoding")
     using standard::MessageID;
     using standard::RegisterValue;
 
-//    {
-//        // Testing standard::RegisterDataResponseMessage here; the other tests test the other message
-//        using standard::RegisterDataResponseMessage;
-//        RegisterDataResponseMessage msg;
-//        REQUIRE(msg.name.empty());
-//        REQUIRE(msg.is<RegisterDataResponseMessage::Empty>());
-//        REQUIRE(!msg.is<RegisterDataResponseMessage::Unstructured>());
-//        REQUIRE(msg.as<RegisterDataResponseMessage::Empty>() != nullptr);
-//        REQUIRE(msg.as<RegisterDataResponseMessage::String>() == nullptr);
-//
-//        REQUIRE(msg == RegisterDataResponseMessage());
-//        REQUIRE((msg != RegisterDataResponseMessage()) == false);
-//
-//        {
-//            const auto encoded = msg.encode();
-//            REQUIRE(encoded.size() == 10);
-//            REQUIRE(encoded == makeArray(std::uint8_t(MessageID::RegisterDataResponse), 0,  // msg ID
-//                                         0, 0, 0, 0, 0, 0,  // reserved in header
-//                                         0, 0));            // payload
-//        }
-//    }
-
     using RegisterData = standard::RegisterDataRequestMessage;
 
     RegisterData msg;
@@ -1945,4 +1923,92 @@ TEST_CASE("RegisterValueDecoding")
     REQUIRE      (go(0, 1, 2, 3)->is<RegisterValue::Empty>());
     REQUIRE_FALSE(go(99));                  // Bad type ID
     REQUIRE      (go(1, 48)->as<RegisterValue::String>()->operator==("0"));
+}
+
+
+TEST_CASE("RegisterDataResponse")
+{
+    using standard::MessageID;
+    using standard::RegisterDataResponseMessage;
+    using standard::RegisterValue;
+
+    const auto decode = [](const auto& container)
+    {
+        return RegisterDataResponseMessage::tryDecode(container.begin(), container.end());
+    };
+
+    RegisterDataResponseMessage msg;
+
+    REQUIRE(msg.timestamp.count() == 0);
+    REQUIRE(msg.flags.value == 0);
+    REQUIRE(!msg.flags.isMutable());
+    REQUIRE(!msg.flags.isPersistent());
+    REQUIRE(msg.name.empty());
+    REQUIRE(msg.value.is<RegisterValue::Empty>());
+
+    REQUIRE(msg.encode().size() == (RegisterDataResponseMessage::MinEncodedSize + standard::MessageHeader::Size));
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::RegisterDataResponse), 0,
+                                      0, 0, 0, 0, 0, 0,
+                                      0, 0, 0, 0, 0, 0, 0, 0,           // timestamp
+                                      0,                                // flags
+                                      0,                                // name
+                                      0                                 // value
+    ));
+
+    REQUIRE(decode(msg.encode())->encode() == msg.encode());            // Encode-decode loop
+
+    msg.timestamp = standard::Timestamp(0xDEAD'BEEF'BADC'0FFEULL);
+    msg.flags.setMutable(true);
+    msg.flags.setPersistent(true);
+
+    while (msg.name.length() < msg.name.max_size())
+    {
+        msg.name.push_back('Z');
+    }
+
+    msg.value.emplace<RegisterValue::I64>(RegisterValue::I64::Capacity, -1);
+
+    REQUIRE(msg.timestamp.count() == 0xDEAD'BEEF'BADC'0FFEULL);
+    REQUIRE(msg.flags.value == 3);
+    REQUIRE(msg.flags.isMutable());
+    REQUIRE(msg.flags.isPersistent());
+    REQUIRE(msg.name[0] == 'Z');
+    REQUIRE(msg.name[92] == 'Z');
+    REQUIRE(msg.value.is<RegisterValue::I64>());
+    REQUIRE(msg.value.as<RegisterValue::I64>()->size() == RegisterValue::I64::Capacity);
+
+    std::cout << "ENCODED:" << std::endl;
+    printHexDump(msg.encode());
+
+    REQUIRE(msg.encode().size() == (RegisterDataResponseMessage::MaxEncodedSize + standard::MessageHeader::Size));
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::RegisterDataResponse), 0,
+                                      0, 0, 0, 0, 0, 0,
+                                      0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,           // timestamp
+                                      3,                                                        // flags
+                                      93,                                                       // name length
+                                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,       // name
+                                      4,                                                        // value type
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255
+    ));
+
+    REQUIRE(decode(msg.encode())->encode() == msg.encode());            // Encode-decode loop
 }

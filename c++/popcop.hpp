@@ -1411,6 +1411,16 @@ namespace standard
 static constexpr std::chrono::seconds DefaultStandardRequestTimeout = std::chrono::seconds(1);
 
 /**
+ * Time point representation used in standard Popcop messages. Application-specific messages can obviously use custom
+ * time representation formats.
+ * The timestamp is a 64-bit unsigned integer number of nanoseconds since some arbitrary point in time.
+ * Assuming the worst case that the reference point is the beginning of the UNIX epoch, we can expect the
+ * timestamp to roll over to zero on:
+ *  1970 + (2**64 - 1) / 1e9 / 3600 / 24 / 365 = 2554.9
+ */
+using Timestamp = std::chrono::duration<std::uint64_t, std::nano>;
+
+/**
  * ID of all standard messages are listed here.
  */
 enum class MessageID : std::uint16_t
@@ -2165,6 +2175,137 @@ struct RegisterDataRequestMessage
         }
 
         RegisterDataRequestMessage msg;
+        if (!msg.name.tryDecode(decoder))
+        {
+            return {};
+        }
+
+        if (!msg.value.tryDecode(decoder))
+        {
+            return {};
+        }
+
+        return msg;
+    }
+};
+
+/**
+ * Representation of register flags.
+ */
+struct RegisterFlags
+{
+    using Type = std::uint8_t;
+
+    static constexpr Type Mutable       = 1;
+    static constexpr Type Persistent    = 2;
+
+    Type value = 0;
+
+    [[nodiscard]] bool isMutable()    const { return check<Mutable>(); }
+    [[nodiscard]] bool isPersistent() const { return check<Persistent>(); }
+
+    void setMutable(bool x)    { set<Mutable>(x); }
+    void setPersistent(bool x) { set<Persistent>(x); }
+
+private:
+    template <Type F> [[nodiscard]] bool check() const { return (value & F) != 0; }
+
+    template <Type F>
+    void set(const bool x)
+    {
+        if (x) { value = Type(value |  F); }
+        else   { value = Type(value & ~F); }
+    }
+};
+
+/**
+ * This is a simple composition of RegisterName and RegisterValue with some additional values.
+ * Register does not exist if the value is empty.
+ * Register exists and the response contains its data if the value is not empty.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u64             timestamp       Timestamp of the provided value.
+ *      8       u8              flags           Register flags: 1 - mutable, 2 - persistent.
+ *      9       u8              name_length     Length of the next field.
+ *      10      u8[<=93]        name            ASCII name, not terminated - see the previous field.
+ *      10..103 u8              type_id         Type of the value contained in this message.
+ *      11..104 u8[<=256]       encoded_payload Array of values whose types are defined by type_id.
+ *  -----------------------------------------------------------------------------------------------
+ *    <=360
+ */
+struct RegisterDataResponseMessage
+{
+    static constexpr std::size_t MinEncodedSize = 11;
+    static constexpr std::size_t MaxEncodedSize = 360;
+
+    static constexpr MessageID ID = MessageID::RegisterDataResponse;
+
+    /**
+     * All fields of this message type.
+     */
+    Timestamp timestamp{};
+    RegisterFlags flags;
+    RegisterName name;
+    RegisterValue value;
+
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
+     */
+    template <typename OutputIterator>
+    std::size_t encode(OutputIterator begin) const
+    {
+        presentation::StreamEncoder encoder(begin);
+        MessageHeader(ID).encode(encoder);
+        encoder.addU64(timestamp.count());
+        encoder.addU8(flags.value);
+        name.encode(encoder);
+        value.encode(encoder);
+        assert(encoder.getOffset() >= (MinEncodedSize + MessageHeader::Size));
+        assert(encoder.getOffset() <= (MaxEncodedSize + MessageHeader::Size));
+        return encoder.getOffset();
+    }
+
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    DynamicMessageBuffer<MaxEncodedSize> encode() const
+    {
+        DynamicMessageBuffer<MaxEncodedSize> buf;
+        const std::size_t size = encode(std::back_inserter(buf));
+        (void) size;
+        assert(size == buf.size());
+        return buf;
+    }
+
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     */
+    template <typename InputIterator>
+    static std::optional<RegisterDataResponseMessage> tryDecode(InputIterator begin, InputIterator end)
+    {
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
+        if (!header || (header->message_id != ID))
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() < MinEncodedSize)
+        {
+            return {};
+        }
+
+        RegisterDataResponseMessage msg;
+        msg.timestamp = Timestamp(decoder.fetchU64());
+        msg.flags.value = decoder.fetchU8();
+
         if (!msg.name.tryDecode(decoder))
         {
             return {};
