@@ -1,4 +1,4 @@
-
+#
 # The MIT License (MIT)
 #
 # Copyright (c) 2017-2018 Zubax Robotics
@@ -29,10 +29,6 @@ import datetime
 from .message_base import MessageBase
 
 
-def _decode_fixed_capacity_string(s: bytes) -> str:
-    return s.rstrip(b'\0').decode(errors='ignore')
-
-
 class NodeInfoMessage(MessageBase):
     """
     Representation of the standard NodeInfo message.
@@ -40,18 +36,18 @@ class NodeInfoMessage(MessageBase):
 
       Offset    Type    Name
     ---------------------------------------------------
-        0       u64         software_image_crc
-        8       u32         software_vcs_commit_id
-        12      u32         software_build_timestamp_utc        UTC Unix time in seconds
-        16      u8          software_version_major
-        17      u8          software_version_minor
-        18      u8          hardware_version_major
-        19      u8          hardware_version_minor
-        20      u8          flags                               1 - SW CRC set, 2 - SW release, 4 - SW dirty build
-        21      u8          mode                                0 - normal, 1 - bootloader
-        22      u8[2]       <reserved>
-        24      u8[16]      globally_unique_id
-        40      u8[80]      node_name
+          0     u64         software_image_crc
+          8     u32         software_vcs_commit_id
+         12     u32         software_build_timestamp_utc        UTC Unix time in seconds
+         16     u8          software_version_major
+         17     u8          software_version_minor
+         18     u8          hardware_version_major
+         19     u8          hardware_version_minor
+         20     u8          flags                               1 - SW CRC set, 2 - SW release, 4 - SW dirty build
+         21     u8          mode                                0 - normal, 1 - bootloader
+         22     u8[2]       <reserved>
+         24     u8[16]      globally_unique_id
+         40     u8[80]      node_name
         120     u8[80]      node_description
         200     u8[80]      build_environment_description
         280     u8[80]      runtime_environment_description
@@ -96,6 +92,22 @@ class NodeInfoMessage(MessageBase):
         Per Popcop, an empty node info message is a request for node info.
         """
         return (not self.node_description) and (not self.node_name)
+
+    def __str__(self):
+        out = 'sw_crc=%r, sw_vcs=%r, sw_ts=%r, ' % (self.software_image_crc, self.software_vcs_commit_id,
+                                                    self.software_build_timestamp_utc)
+
+        out += 'sw_ver=%r.%r, hw_ver=%r.%r, mode=%s, guid=%s, ' % \
+               (self.software_version_major, self.software_version_minor,
+                self.hardware_version_major, self.hardware_version_minor,
+                self.mode, self.globally_unique_id.hex())
+
+        out += 'name=%r, desc=%r, bed=%r, red=%r, coa=%s' % \
+               (self.node_name, self.node_description, self.build_environment_description,
+                self.runtime_environment_description, self.certificate_of_authenticity.hex())
+        return out
+
+    __repr__ = __str__
 
     def _encode(self) -> bytes:
         flags = 0
@@ -176,18 +188,6 @@ class NodeInfoMessage(MessageBase):
 
         return msg
 
-    def __str__(self):
-        out = 'sw_crc=%r, sw_vcs=%r, sw_ts=%r, ' % (self.software_image_crc, self.software_vcs_commit_id,
-                                                    self.software_build_timestamp_utc)
 
-        out += 'sw_ver=%r.%r, hw_ver=%r.%r, mode=%s, guid=%s, ' % \
-               (self.software_version_major, self.software_version_minor,
-                self.hardware_version_major, self.hardware_version_minor,
-                self.mode, self.globally_unique_id.hex())
-
-        out += 'name=%r, desc=%r, bed=%r, red=%r, coa=%s' % \
-               (self.node_name, self.node_description, self.build_environment_description,
-                self.runtime_environment_description, self.certificate_of_authenticity.hex())
-        return out
-
-    __repr__ = __str__
+def _decode_fixed_capacity_string(s: bytes) -> str:
+    return s.rstrip(b'\0').decode(errors='ignore')
