@@ -33,3 +33,4 @@ cmake-build-*
 .project
 .cproject
 .pydevproject
+*.kdev4
