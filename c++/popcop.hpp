@@ -2320,6 +2320,79 @@ struct RegisterDataResponseMessage
     }
 };
 
+/**
+ * Request of register name by index. Used for discovery purposes only.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u16             register_index  Index of the register name of which is requested.
+ *  -----------------------------------------------------------------------------------------------
+ *      2
+ */
+struct RegisterDiscoveryRequest
+{
+    static constexpr std::size_t EncodedSize = 2;
+
+    static constexpr MessageID ID = MessageID::RegisterDiscoveryRequest;
+
+    /**
+     * All fields of this message type.
+     */
+    std::uint16_t index = 0;
+
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
+     */
+    template <typename OutputIterator>
+    std::size_t encode(OutputIterator begin) const
+    {
+        presentation::StreamEncoder encoder(begin);
+        MessageHeader(ID).encode(encoder);
+        encoder.addU16(index);
+        assert(encoder.getOffset() == (EncodedSize + MessageHeader::Size));
+        return EncodedSize + MessageHeader::Size;
+    }
+
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    StaticMessageBuffer<EncodedSize> encode() const
+    {
+        StaticMessageBuffer<EncodedSize> buf;
+        (void) encode(buf.begin());
+        return buf;
+    }
+
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     */
+    template <typename InputIterator>
+    static std::optional<RegisterDiscoveryRequest> tryDecode(InputIterator begin, InputIterator end)
+    {
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
+        if (!header || (header->message_id != ID))
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() != EncodedSize)
+        {
+            return {};
+        }
+
+        RegisterDiscoveryRequest msg;
+        msg.index = decoder.fetchU16();
+        return msg;
+    }
+};
+
 } // namespace standard
 
 } // namespace popcop

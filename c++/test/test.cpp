@@ -2012,3 +2012,28 @@ TEST_CASE("RegisterDataResponse")
 
     REQUIRE(decode(msg.encode())->encode() == msg.encode());            // Encode-decode loop
 }
+
+
+TEST_CASE("RegisterDiscoveryRequest")
+{
+    using standard::MessageID;
+    using standard::RegisterDiscoveryRequest;
+
+    const auto decode = [](const auto& container)
+    {
+        return RegisterDiscoveryRequest::tryDecode(container.begin(), container.end());
+    };
+
+    RegisterDiscoveryRequest msg;
+    REQUIRE(msg.index == 0);
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::RegisterDiscoveryRequest), 0,
+                                      0, 0, 0, 0, 0, 0,
+                                      0, 0));
+    REQUIRE(decode(msg.encode())->index == 0);
+
+    msg.index = 12345;
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::RegisterDiscoveryRequest), 0,
+                                      0, 0, 0, 0, 0, 0,
+                                      0x39, 0x30));
+    REQUIRE(decode(msg.encode())->index == 12345);
+}
