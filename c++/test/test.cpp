@@ -1146,10 +1146,9 @@ TEST_CASE("StreamDecoder-slow")
 
 TEST_CASE("NodeInfoMessage")
 {
-    const std::array<std::uint8_t, 372> carefully_crafted_message
+    const std::array<std::uint8_t, 366> carefully_crafted_message
     {{
         0x00, 0x00,                                       // Message ID
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,               // Reserved in the header
 
         0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xFF,   // SW CRC
         0xEF, 0xBE, 0xAD, 0xDE,                           // SW VCS ID
@@ -1241,7 +1240,7 @@ TEST_CASE("NodeInfoMessage")
     msg.certificate_of_authenticity.push_back(4);
 
     const auto encoded = msg.encode();
-    REQUIRE(encoded.size() == 8 + 360 + 4);
+    REQUIRE(encoded.size() == standard::MessageHeader::Size + 360 + 4);
 
     std::cout << "Manually constructed:" << std::endl;
     printHexDump(carefully_crafted_message);
@@ -1320,9 +1319,8 @@ TEST_CASE("RegisterDataEncoding")
 
     {
         const auto encoded = msg.encode();
-        REQUIRE(encoded.size() == 10);
+        REQUIRE(encoded.size() == 4);
         REQUIRE(encoded == makeArray(std::uint8_t(MessageID::RegisterDataRequest), 0,  // msg ID
-                                     0, 0, 0, 0, 0, 0,  // reserved in header
                                      0, 0));            // payload
     }
 
@@ -1330,9 +1328,8 @@ TEST_CASE("RegisterDataEncoding")
 
     {
         const auto encoded = msg.encode();
-        REQUIRE(encoded.size() == 17);
+        REQUIRE(encoded.size() == 11);
         REQUIRE(encoded == makeArray(std::uint8_t(MessageID::RegisterDataRequest), 0,   // msg ID
-                                     0, 0, 0, 0, 0, 0,                                  // reserved in header
                                      7,                                                 // name length
                                      49, 50, 51, 52, 53, 54, 55,                        // name
                                      0                                                  // type ID
@@ -1347,10 +1344,9 @@ TEST_CASE("RegisterDataEncoding")
 
     {
         const auto encoded = msg.encode();
-        REQUIRE(encoded.size() == 10 + 93);
+        REQUIRE(encoded.size() == 4 + 93);
         const auto reference = makeArray(
             std::uint8_t(MessageID::RegisterDataRequest), 0,                                 // msg ID
-            0, 0, 0, 0, 0, 0,                                                                // reserved in header
             93,                                                                              // name length
             49, 50, 51, 52, 53, 54, 55, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,  // name
             90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
@@ -1378,9 +1374,8 @@ TEST_CASE("RegisterDataEncoding")
         const auto encoded = msg.encode();
         std::cout << "ENCODED (value '1234567'):" << std::endl;
         printHexDump(encoded);
-        REQUIRE(encoded.size() == 17);
+        REQUIRE(encoded.size() == 11);
         REQUIRE(encoded == makeArray(std::uint8_t(MessageID::RegisterDataRequest), 0,  // msg ID
-                                     0, 0, 0, 0, 0, 0,                          // reserved in header
                                      0,                                         // name length
                                      1,                                         // type ID
                                      49, 50, 51, 52, 53, 54, 55                 // value
@@ -1404,10 +1399,9 @@ TEST_CASE("RegisterDataEncoding")
 
     {
         const auto encoded = msg.encode();
-        REQUIRE(encoded.size() == 10 + 93 + 256);
+        REQUIRE(encoded.size() == 4 + 93 + 256);
         const auto reference = makeArray(
             std::uint8_t(MessageID::RegisterDataRequest), 0,                                 // msg ID
-            0, 0, 0, 0, 0, 0,                                                                // reserved in header
             93,                                                                              // name length
             90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,  // name
             90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
@@ -1445,10 +1439,9 @@ TEST_CASE("RegisterDataEncoding")
 
     {
         const auto encoded = msg.encode();
-        REQUIRE(encoded.size() == 10 + 1 + 4);
+        REQUIRE(encoded.size() == 4 + 1 + 4);
         const auto reference = makeArray(
             std::uint8_t(MessageID::RegisterDataRequest), 0,                                 // msg ID
-            0, 0, 0, 0, 0, 0,                                                                // reserved in header
             1,                                                                               // name length
             48,                                                                              // name
             3,                                                                               // type ID
@@ -1469,10 +1462,9 @@ TEST_CASE("RegisterDataEncoding")
 
     {
         const auto encoded = msg.encode();
-        REQUIRE(encoded.size() == 10 + 1 + 5);
+        REQUIRE(encoded.size() == 4 + 1 + 5);
         const auto reference = makeArray(
             std::uint8_t(MessageID::RegisterDataRequest), 0,                                 // msg ID
-            0, 0, 0, 0, 0, 0,                                                                // reserved in header
             1,                                                                               // name length
             49,                                                                              // name
             2,                                                                               // type ID
@@ -1506,38 +1498,32 @@ TEST_CASE("RegisterDataDecoding")
     REQUIRE_FALSE(go(0));
     REQUIRE_FALSE(go(M, 0));
     REQUIRE_FALSE(go(0, 0, 0));
-    REQUIRE_FALSE(go(M, 0, 0, 0));
-    REQUIRE_FALSE(go(0, 0, 0, 0, 0));
-    REQUIRE_FALSE(go(M, 0, 0, 0, 0, 0));
-    REQUIRE_FALSE(go(0, 0, 0, 0, 0, 0, 0));
-    REQUIRE_FALSE(go(M, 0, 0, 0, 0, 0, 0, 0));
-    REQUIRE_FALSE(go(0, 0, 0, 0, 0, 0, 0, 0, 0));
-    REQUIRE_FALSE(go(0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
-    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+    REQUIRE_FALSE(go(0, 0, 0, 0));
+    REQUIRE      (go(M, 0, 0, 0));
 
-    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0));
-    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0)->name.empty());
-    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0)->value.is<RegisterValue::Empty>());
+    REQUIRE      (go(M, 0, 0, 0));
+    REQUIRE      (go(M, 0, 0, 0)->name.empty());
+    REQUIRE      (go(M, 0, 0, 0)->value.is<RegisterValue::Empty>());
     // Payload ignored for empty register values:
-    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3)->value.is<RegisterValue::Empty>());
+    REQUIRE      (go(M, 0, 0, 0, 1, 2, 3)->value.is<RegisterValue::Empty>());
 
-    REQUIRE_FALSE(go(M, 0, 0, 0, 0, 0, 0, 0,
+    REQUIRE_FALSE(go(M, 0,
                      0, 99));                  // Bad type ID
 
-    REQUIRE_FALSE(go(M, 0, 0, 0, 0, 0, 0, 0,
+    REQUIRE_FALSE(go(M, 0,
                      99, 0));                  // Bad name length
 
-    REQUIRE_FALSE(go(M, 0, 0, 0, 0, 0, 0, 0,
+    REQUIRE_FALSE(go(M, 0,
                      1));                      // Bad name length
 
-    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0,
+    REQUIRE      (go(M, 0,
                      1, 49, 0)->name == "1");
 
-    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 2, 49, 48)->name == "10"); // No explicit value, empty value is deduced
-    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 2, 49, 48)->value.is<RegisterValue::Empty>());
+    REQUIRE      (go(M, 0, 2, 49, 48)->name == "10"); // No explicit value, empty value is deduced
+    REQUIRE      (go(M, 0, 2, 49, 48)->value.is<RegisterValue::Empty>());
 
-    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 1, 49, 1, 48)->name == "1");
-    REQUIRE      (go(M, 0, 0, 0, 0, 0, 0, 0, 1, 49, 1, 48)->value.as<RegisterValue::String>()->operator==("0"));
+    REQUIRE      (go(M, 0, 1, 49, 1, 48)->name == "1");
+    REQUIRE      (go(M, 0, 1, 49, 1, 48)->value.as<RegisterValue::String>()->operator==("0"));
 }
 
 
@@ -1948,7 +1934,6 @@ TEST_CASE("RegisterDataResponse")
 
     REQUIRE(msg.encode().size() == (RegisterDataResponseMessage::MinEncodedSize + standard::MessageHeader::Size));
     REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::RegisterDataResponse), 0,
-                                      0, 0, 0, 0, 0, 0,
                                       0, 0, 0, 0, 0, 0, 0, 0,           // timestamp
                                       0,                                // flags
                                       0,                                // name
@@ -1982,7 +1967,6 @@ TEST_CASE("RegisterDataResponse")
 
     REQUIRE(msg.encode().size() == (RegisterDataResponseMessage::MaxEncodedSize + standard::MessageHeader::Size));
     REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::RegisterDataResponse), 0,
-                                      0, 0, 0, 0, 0, 0,
                                       0xFE, 0x0F, 0xDC, 0xBA, 0xEF, 0xBE, 0xAD, 0xDE,           // timestamp
                                       3,                                                        // flags
                                       93,                                                       // name length
@@ -2027,13 +2011,11 @@ TEST_CASE("RegisterDiscoveryRequest")
     RegisterDiscoveryRequest msg;
     REQUIRE(msg.index == 0);
     REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::RegisterDiscoveryRequest), 0,
-                                      0, 0, 0, 0, 0, 0,
                                       0, 0));
     REQUIRE(decode(msg.encode())->index == 0);
 
     msg.index = 12345;
     REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::RegisterDiscoveryRequest), 0,
-                                      0, 0, 0, 0, 0, 0,
                                       0x39, 0x30));
     REQUIRE(decode(msg.encode())->index == 12345);
 }
@@ -2053,7 +2035,6 @@ TEST_CASE("RegisterDiscoveryResponse")
     REQUIRE(msg.index == 0);
     REQUIRE(msg.name.empty());
     REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::RegisterDiscoveryResponse), 0,
-                                      0, 0, 0, 0, 0, 0,
                                       0, 0, 0));
     REQUIRE(decode(msg.encode())->index == 0);
     REQUIRE(decode(msg.encode())->name.empty());
@@ -2065,7 +2046,6 @@ TEST_CASE("RegisterDiscoveryResponse")
     }
 
     REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::RegisterDiscoveryResponse), 0,
-                                      0, 0, 0, 0, 0, 0,
                                       0x39, 0x30,
                                       93,                                                       // name length
                                       90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,

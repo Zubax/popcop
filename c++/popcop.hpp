@@ -1435,18 +1435,16 @@ enum class MessageID : std::uint16_t
 /**
  * This class represents a standard frame header.
  * It can be used to parse and generate standard frames.
- * Layout (note that all fields are aligned, no padding necessary):
  *
  *    Offset    Type    Name
  *  ---------------------------------------------------
  *      0       u16     message_id
- *      2       u8[6]   <reserved>
  *  ---------------------------------------------------
- *      8                                                   All standard messages are aligned at 8 bytes.
+ *      2
  */
 struct MessageHeader
 {
-    static constexpr std::size_t Size = 8;
+    static constexpr std::size_t Size = 2;
 
     MessageID message_id{};
 
@@ -1462,7 +1460,6 @@ struct MessageHeader
     void encode(presentation::StreamEncoder<OutputIterator>& encoder) const
     {
         encoder.addU16(std::uint16_t(message_id));
-        encoder.fillUpToOffset(8);
     }
 
     template <typename InputIterator>
@@ -1471,7 +1468,6 @@ struct MessageHeader
         if (decoder.getRemainingLength() >= Size)
         {
             MessageHeader hdr(MessageID(decoder.fetchU16()));
-            decoder.skipUpToOffset(8);
             return hdr;
         }
         else
