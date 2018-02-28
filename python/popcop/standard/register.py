@@ -269,7 +269,7 @@ def _enforce_serializability(type_id: ValueType, value: _VALUE_TYPE_ANNOTATION) 
     try:
         _encode_value(type_id, value)
     except Exception as ex:
-        raise ValueError('The specified value (with type ID %r) cannot be encoded' % self.type_id) from ex
+        raise ValueError('The specified value (with type ID %r) cannot be encoded' % type_id) from ex
 
     if (type_id == ValueType.EMPTY) and (value is not None):
         raise ValueError('Incorrect type ID %r for value of type %r' % (type_id, type(value)))
