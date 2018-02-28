@@ -154,7 +154,6 @@ class TestStandardMessages(unittest.TestCase):
     def test_node_info(self):
         carefully_crafted_message = bytes([
             0x00, 0x00,                                         # Message ID
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,                 # Reserved in the header
 
             0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xFF,     # SW CRC
             0xEF, 0xBE, 0xAD, 0xDE,                             # SW VCS ID
@@ -422,7 +421,7 @@ class TestSerialMultiprocessing(unittest.TestCase):
             self.assertIsInstance(item, popcop.transport.ReceivedFrame)
             print(item)
             self.assertEqual(item.frame_type_code, popcop.standard.STANDARD_FRAME_TYPE_CODE)
-            self.assertEqual(item.payload, bytes([0] * 8))
+            self.assertEqual(item.payload, bytes([0] * 2))
 
             item = await ch.receive(1)
             self.assertIsInstance(item, popcop.standard.NodeInfoMessage)

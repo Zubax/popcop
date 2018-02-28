@@ -33,6 +33,7 @@ from . import STANDARD_FRAME_TYPE_CODE
 
 
 DEFAULT_STANDARD_REQUEST_TIMEOUT = 1.0
+HEADER_SIZE = 2
 
 
 def _decode_fixed_capacity_string(s: bytes) -> str:
@@ -196,7 +197,6 @@ def encode_header(msg_type: typing.Type[MessageBase]) -> bytes:
     return bytes([
         (msg_type.MESSAGE_ID >> 0) & 0xFF,
         (msg_type.MESSAGE_ID >> 8) & 0xFF,
-        0, 0, 0, 0, 0, 0
     ])
 
 
@@ -211,7 +211,7 @@ def encode(msg: MessageBase) -> bytearray:
     :return:        bytearray.
     """
     header = encode_header(type(msg))
-    assert len(header) == 8
+    assert len(header) == HEADER_SIZE
 
     # noinspection PyProtectedMember
     raw = header + msg._encode()
@@ -232,7 +232,7 @@ def decode(received_frame: ReceivedFrame) -> typing.Optional[MessageBase]:
 
     pl = received_frame.payload
     try:
-        header, data = pl[:8], pl[8:]
+        header, data = pl[:HEADER_SIZE], pl[HEADER_SIZE:]
     except IndexError:
         return
 
