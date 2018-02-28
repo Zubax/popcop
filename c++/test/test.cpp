@@ -1239,6 +1239,9 @@ TEST_CASE("NodeInfoMessage")
     msg.certificate_of_authenticity.push_back(3);
     msg.certificate_of_authenticity.push_back(4);
 
+    REQUIRE_FALSE(msg.isRequest());
+    REQUIRE(standard::NodeInfoMessage().isRequest());
+
     const auto encoded = msg.encode();
     REQUIRE(encoded.size() == standard::MessageHeader::Size + 360 + 4);
 
@@ -1279,7 +1282,11 @@ TEST_CASE("NodeInfoMessage")
 
     {
         auto ccm = carefully_crafted_message;
-        REQUIRE(!standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.begin() + 360));  // Too short
+
+        // Short message is treated as request
+        REQUIRE(standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.begin() + 360));
+        REQUIRE(standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.begin() + 360)->isRequest());
+
         REQUIRE(!standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.begin() + 700));  // Too long
         REQUIRE(standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.end()));           // Just right
     }

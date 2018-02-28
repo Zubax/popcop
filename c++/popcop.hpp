@@ -1544,6 +1544,10 @@ struct NodeInfoMessage
 
     using String = util::FixedCapacityString<80>;
 
+    /**
+     * Message fields.
+     * Note that an empty message is treated as request for node info. There is a dedicated method for that.
+     */
     SoftwareVersion software_version;
     HardwareVersion hardware_version;
     Mode mode{};
@@ -1553,6 +1557,11 @@ struct NodeInfoMessage
     String build_environment_description;
     String runtime_environment_description;
     util::FixedCapacityVector<std::uint8_t, 255> certificate_of_authenticity;
+
+    /**
+     * True if the message is empty. An empty message is considered a request for node info.
+     */
+    bool isRequest() const { return node_name.empty() && node_description.empty(); }
 
     /**
      * Encodes the message into the provided sequential iterator.
@@ -1648,13 +1657,16 @@ struct NodeInfoMessage
         }
 
         auto decoder = header_decoder.makeNew();     // Creating a new one to exclude header offset
-        if ((decoder.getRemainingLength() < MinEncodedSize) ||
-            (decoder.getRemainingLength() > MaxEncodedSize))
+        NodeInfoMessage msg;
+        if (decoder.getRemainingLength() < MinEncodedSize)
+        {
+            return msg;     // An empty message is considered a request for node info.
+        }
+
+        if (decoder.getRemainingLength() > MaxEncodedSize)
         {
             return {};
         }
-
-        NodeInfoMessage msg;
 
         msg.software_version.image_crc              = decoder.fetchU64();
         msg.software_version.vcs_commit_id          = decoder.fetchU32();
