@@ -27,7 +27,7 @@ import typing
 import time
 
 
-__all__ = ['FRAME_DELIMITER', 'ESCAPE_CHARACTER', 'Parser', 'encode']
+__all__ = ['FRAME_DELIMITER', 'ESCAPE_CHARACTER', 'Parser', 'encode', 'ReceivedFrame']
 
 
 FRAME_DELIMITER  = 0x8E

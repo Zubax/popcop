@@ -1,4 +1,4 @@
-#
+
 # The MIT License (MIT)
 #
 # Copyright (c) 2017-2018 Zubax Robotics
@@ -24,34 +24,19 @@
 #
 
 import enum
-import typing
 import struct
 import datetime
-from . import transport
-from .transport import ReceivedFrame
-from . import STANDARD_FRAME_TYPE_CODE
-
-
-DEFAULT_STANDARD_REQUEST_TIMEOUT = 1.0
-HEADER_SIZE = 2
+from .message_base import MessageBase
 
 
 def _decode_fixed_capacity_string(s: bytes) -> str:
     return s.rstrip(b'\0').decode(errors='ignore')
 
 
-class MessageBase:
-    MESSAGE_ID = None
-
-    SERIALIZER = None
-
-    def _encode(self) -> bytes:
-        raise NotImplementedError
-
-
 class NodeInfoMessage(MessageBase):
     """
     Representation of the standard NodeInfo message.
+    An empty message is treated as a request for node info.
 
       Offset    Type    Name
     ---------------------------------------------------
@@ -72,11 +57,11 @@ class NodeInfoMessage(MessageBase):
         280     u8[80]      runtime_environment_description
         360     u8[<=255]   certificate_of_authenticity         Until the end of the message
     ---------------------------------------------------
-        <=615
+        360..615
     """
     MESSAGE_ID = 0
 
-    SERIALIZER = struct.Struct('< Q L L 6B xx 16s 80s 80s 80s 80s')  # Trailing certificate_of_authenticity excluded
+    _STRUCT = struct.Struct('< Q L L 6B xx 16s 80s 80s 80s 80s')  # Trailing certificate_of_authenticity excluded
 
     class Mode(enum.IntEnum):
         NORMAL = 0
@@ -87,7 +72,7 @@ class NodeInfoMessage(MessageBase):
         SOFTWARE_RELEASE_BUILD = 2
         SOFTWARE_DIRTY_BUILD = 4
 
-    def __init__(self, decode_from: typing.Optional[bytes]=None):
+    def __init__(self):
         self.software_image_crc = None
         self.software_vcs_commit_id = 0
         self.software_build_timestamp_utc = datetime.datetime.utcfromtimestamp(0)
@@ -105,38 +90,12 @@ class NodeInfoMessage(MessageBase):
         self.runtime_environment_description = ''
         self.certificate_of_authenticity = bytearray()
 
-        if decode_from:
-            self.software_image_crc,\
-                self.software_vcs_commit_id, \
-                build_timestamp_utc, \
-                self.software_version_major, \
-                self.software_version_minor, \
-                self.hardware_version_major, \
-                self.hardware_version_minor, \
-                flags, \
-                mode, \
-                self.globally_unique_id, \
-                node_name, \
-                node_description, \
-                build_environment_description, \
-                runtime_environment_description, \
-                = self.SERIALIZER.unpack(decode_from[:self.SERIALIZER.size])
-
-            if (flags & self._Flags.SOFTWARE_IMAGE_CRC_AVAILABLE) == 0:
-                self.software_image_crc = None
-
-            self.software_build_timestamp_utc = datetime.datetime.utcfromtimestamp(build_timestamp_utc)
-
-            self.software_release_build = bool(flags & self._Flags.SOFTWARE_RELEASE_BUILD)
-            self.software_dirty_build = bool(flags & self._Flags.SOFTWARE_DIRTY_BUILD)
-
-            self.mode = self.Mode(mode)
-            self.node_name = _decode_fixed_capacity_string(node_name)
-            self.node_description = _decode_fixed_capacity_string(node_description)
-            self.build_environment_description = _decode_fixed_capacity_string(build_environment_description)
-            self.runtime_environment_description = _decode_fixed_capacity_string(runtime_environment_description)
-
-            self.certificate_of_authenticity = decode_from[self.SERIALIZER.size:]
+    @property
+    def is_request(self) -> bool:
+        """
+        Per Popcop, an empty node info message is a request for node info.
+        """
+        return (not self.node_description) and (not self.node_name)
 
     def _encode(self) -> bytes:
         flags = 0
@@ -159,22 +118,63 @@ class NodeInfoMessage(MessageBase):
         if not (0 <= build_timestamp_utc < 2**32):
             raise ValueError('Invalid build timestamp: %r' % build_timestamp_utc)
 
-        out = self.SERIALIZER.pack(int(self.software_image_crc or 0),
-                                   self.software_vcs_commit_id,
-                                   build_timestamp_utc,
-                                   self.software_version_major,
-                                   self.software_version_minor,
-                                   self.hardware_version_major,
-                                   self.hardware_version_minor,
-                                   flags,
-                                   int(self.mode),
-                                   bytes(self.globally_unique_id),
-                                   self.node_name.encode(),
-                                   self.node_description.encode(),
-                                   self.build_environment_description.encode(),
-                                   self.runtime_environment_description.encode())
+        out = self._STRUCT.pack(int(self.software_image_crc or 0),
+                                self.software_vcs_commit_id,
+                                build_timestamp_utc,
+                                self.software_version_major,
+                                self.software_version_minor,
+                                self.hardware_version_major,
+                                self.hardware_version_minor,
+                                flags,
+                                int(self.mode),
+                                bytes(self.globally_unique_id),
+                                self.node_name.encode(),
+                                self.node_description.encode(),
+                                self.build_environment_description.encode(),
+                                self.runtime_environment_description.encode())
 
         return out + bytes(self.certificate_of_authenticity)
+
+    @staticmethod
+    def _decode(encoded: bytes) -> 'NodeInfoMessage':
+        msg = NodeInfoMessage()
+
+        if len(encoded) < msg._STRUCT.size:   # An empty serialized payload is just a request for node info
+            return msg
+
+        msg.software_image_crc, \
+            msg.software_vcs_commit_id, \
+            build_timestamp_utc, \
+            msg.software_version_major, \
+            msg.software_version_minor, \
+            msg.hardware_version_major, \
+            msg.hardware_version_minor, \
+            flags, \
+            mode, \
+            msg.globally_unique_id, \
+            node_name, \
+            node_description, \
+            build_environment_description, \
+            runtime_environment_description, \
+            = msg._STRUCT.unpack(encoded[:msg._STRUCT.size])
+
+        if (flags & msg._Flags.SOFTWARE_IMAGE_CRC_AVAILABLE) == 0:
+            msg.software_image_crc = None
+
+        msg.software_build_timestamp_utc = datetime.datetime.utcfromtimestamp(build_timestamp_utc)
+
+        msg.software_release_build = bool(flags & msg._Flags.SOFTWARE_RELEASE_BUILD)
+        msg.software_dirty_build   = bool(flags & msg._Flags.SOFTWARE_DIRTY_BUILD)
+
+        msg.mode = msg.Mode(mode)
+        msg.node_name                       = _decode_fixed_capacity_string(node_name)
+        msg.node_description                = _decode_fixed_capacity_string(node_description)
+        msg.build_environment_description   = _decode_fixed_capacity_string(build_environment_description)
+        msg.runtime_environment_description = _decode_fixed_capacity_string(runtime_environment_description)
+
+        msg.certificate_of_authenticity = encoded[msg._STRUCT.size:]
+
+        return msg
 
     def __str__(self):
         out = 'sw_crc=%r, sw_vcs=%r, sw_ts=%r, ' % (self.software_image_crc, self.software_vcs_commit_id,
@@ -185,59 +185,9 @@ class NodeInfoMessage(MessageBase):
                 self.hardware_version_major, self.hardware_version_minor,
                 self.mode, self.globally_unique_id.hex())
 
-        out += 'name=%r, description=%r, bed=%r, red=%r, coa=%s' % \
+        out += 'name=%r, desc=%r, bed=%r, red=%r, coa=%s' % \
                (self.node_name, self.node_description, self.build_environment_description,
                 self.runtime_environment_description, self.certificate_of_authenticity.hex())
         return out
 
     __repr__ = __str__
-
-
-def encode_header(msg_type: typing.Type[MessageBase]) -> bytes:
-    return bytes([
-        (msg_type.MESSAGE_ID >> 0) & 0xFF,
-        (msg_type.MESSAGE_ID >> 8) & 0xFF,
-    ])
-
-
-def decode_header(raw_header_bytes: typing.Union[bytes, bytearray]) -> tuple:
-    return raw_header_bytes[0] + (raw_header_bytes[1] << 8),
-
-
-def encode(msg: MessageBase) -> bytearray:
-    """
-    Encodes the provided message into a binary frame.
-    :param msg:     The message to encode.
-    :return:        bytearray.
-    """
-    header = encode_header(type(msg))
-    assert len(header) == HEADER_SIZE
-
-    # noinspection PyProtectedMember
-    raw = header + msg._encode()
-
-    return transport.encode(STANDARD_FRAME_TYPE_CODE, raw)
-
-
-def decode(received_frame: ReceivedFrame) -> typing.Optional[MessageBase]:
-    """
-    This function attempts to decode the contents of the provided received frame.
-    Returns None if the frame is invalid or unknown. May throw if the frame is malformed.
-    :param received_frame:  The received frame. The frame type code must be STANDARD_FRAME_TYPE_CODE,
-                            otherwise the function throws ValueError.
-    :return:    Decoded message object such as NodeInfoMessage, or None.
-    """
-    if received_frame.frame_type_code != STANDARD_FRAME_TYPE_CODE:
-        raise ValueError('This is not a standard frame: %r' % received_frame)
-
-    pl = received_frame.payload
-    try:
-        header, data = pl[:HEADER_SIZE], pl[HEADER_SIZE:]
-    except IndexError:
-        return
-
-    message_id, = decode_header(header)
-
-    if message_id == NodeInfoMessage.MESSAGE_ID:
-        if len(data) >= NodeInfoMessage.SERIALIZER.size:
-            return NodeInfoMessage(data)

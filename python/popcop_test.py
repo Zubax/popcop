@@ -400,7 +400,7 @@ class TestSerialMultiprocessing(unittest.TestCase):
             # Awaiting is optional. However, if the future is not awaited, thrown exceptions will be lost!
             await ch.send_raw(b'123456')
             await ch.send_application_specific(123, b'Hello world!', timeout=2)
-            asyncio.gather(ch.send_standard(popcop.standard.NodeInfoMessage, timeout=2),
+            asyncio.gather(ch.send_standard(popcop.standard.NodeInfoMessage, timeout=3),
                            ch.send_standard(popcop.standard.NodeInfoMessage()))
             print('Writer done')
 
@@ -418,10 +418,9 @@ class TestSerialMultiprocessing(unittest.TestCase):
             self.assertEqual(item.payload, b'Hello world!')
 
             item = await ch.receive(1)
-            self.assertIsInstance(item, popcop.transport.ReceivedFrame)
+            self.assertIsInstance(item, popcop.standard.NodeInfoMessage)
+            self.assertTrue(item.is_request)
             print(item)
-            self.assertEqual(item.frame_type_code, popcop.standard.STANDARD_FRAME_TYPE_CODE)
-            self.assertEqual(item.payload, bytes([0] * 2))
 
             item = await ch.receive(1)
             self.assertIsInstance(item, popcop.standard.NodeInfoMessage)
