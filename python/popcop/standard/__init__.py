@@ -29,6 +29,7 @@ from ..transport import ReceivedFrame
 from .. import STANDARD_FRAME_TYPE_CODE
 from .message_base import MessageBase
 from .node_info import NodeInfoMessage
+from .register import RegisterDataRequestMessage
 
 
 DEFAULT_STANDARD_REQUEST_TIMEOUT = 1.0
