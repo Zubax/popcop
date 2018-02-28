@@ -33,6 +33,7 @@ import logging
 import unittest
 import threading
 import contextlib
+from decimal import Decimal
 
 try:
     import serial
@@ -268,6 +269,51 @@ class TestStandardMessages(unittest.TestCase):
                                                    bytes([1, 0, 3, 48, 49, 50, 1, 52, 53, 54]),
                                                    0))
         self.assertIsInstance(msg, DataRequestMessage)
+        self.assertEqual(msg.name, '012')
+        self.assertEqual(msg.type_id, ValueType.STRING)
+        self.assertEqual(msg.value, '456')
+
+    def test_register_data_response(self):
+        from popcop.transport import ReceivedFrame
+        from popcop.standard.register import DataResponseMessage, ValueType, Flags
+        from popcop import STANDARD_FRAME_TYPE_CODE
+
+        self.assertEqual(DataResponseMessage()._encode(), bytes([0, 0, 0, 0, 0, 0, 0, 0,
+                                                                 0, 0, 0]))
+        self.assertEqual(DataResponseMessage(name='Hello', flags=1)._encode(),
+                         b'\0\0\0\0\0\0\0\0\1\x05Hello\x00')
+
+        # >>> '%016x' % (int(Decimal('2.123') * _NANOSECONDS_PER_SECOND))
+        # '000000007e8a68c0'        # Don't forget to flip byte order because little-endian
+        self.assertEqual(DataResponseMessage(timestamp=Decimal('2.123'), flags=2, name='Hello',
+                                             value=123, type_id=ValueType.I8). _encode(),
+                         b'\xc0\x68\x8a\x7e\x00\x00\x00\x00'    # Timestamp 2.123 seconds - see computation above
+                         b'\x02\x05Hello\x07\x7b')
+
+        msg = popcop.standard.decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE,
+                                                   bytes([2, 0,
+                                                          0, 0, 0, 0, 0, 0, 0, 0,
+                                                          0, 0, 0]),
+                                                   0))
+        self.assertIsInstance(msg, DataResponseMessage)
+        self.assertEqual(msg.timestamp, Decimal(0))
+        self.assertEqual(msg.flags.mutable, False)
+        self.assertEqual(msg.flags.persistent, False)
+        self.assertEqual(msg.name, '')
+        self.assertEqual(msg.type_id, ValueType.EMPTY)
+        self.assertIsNone(msg.value)
+
+        msg = popcop.standard.decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE,
+                                                   bytes([2, 0,
+                                                          0xc0, 0x68, 0x8a, 0x7e, 0x0, 0x0, 0x0, 0x0,  # TS as above
+                                                          3,
+                                                          3, 48, 49, 50,
+                                                          1, 52, 53, 54]),
+                                                   0))
+        self.assertIsInstance(msg, DataResponseMessage)
+        self.assertEqual(msg.timestamp, Decimal('2.123'))
+        self.assertEqual(msg.flags.mutable, True)
+        self.assertEqual(msg.flags.persistent, True)
         self.assertEqual(msg.name, '012')
         self.assertEqual(msg.type_id, ValueType.STRING)
         self.assertEqual(msg.value, '456')

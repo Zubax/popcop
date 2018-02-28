@@ -26,6 +26,7 @@
 import enum
 import typing
 import struct
+from decimal import Decimal
 from .message_base import MessageBase
 
 
@@ -123,6 +124,9 @@ _VALUE_TYPE_ANNOTATION = typing.Union[
 ]
 
 
+_NANOSECONDS_PER_SECOND = 1000000000
+
+
 class DataRequestMessage(MessageBase):
     """
     Register read request if the value is empty.
@@ -146,15 +150,8 @@ class DataRequestMessage(MessageBase):
         self.name = str(name or '')
         self.type_id = ValueType(type_id if type_id is not None else ValueType.EMPTY)
         self.value = value
-
         # Check whether the value is serializable early!
-        try:
-            _encode_value(self.type_id, self.value)
-        except Exception as ex:
-            raise ValueError('The specified value (with type ID %r) cannot be encoded' % self.type_id) from ex
-
-        if (self.type_id == ValueType.EMPTY) and (self.value is not None):
-            raise ValueError('Incorrect type ID %r for value of type %r' % (self.type_id, type(self.value)))
+        _enforce_serializability(self.type_id, self.value)
 
     def __str__(self):
         return 'name=%r, type_id=%r, value=%r' % (self.name, self.type_id, self.value)
@@ -178,6 +175,104 @@ class DataRequestMessage(MessageBase):
         msg.name, encoded = _decode_name(encoded)
         msg.type_id, msg.value = _decode_value(encoded)
         return msg
+
+
+class DataResponseMessage(MessageBase):
+    """
+    Register does not exist if the value is empty.
+    Register exists and the response contains its data if the value is not empty.
+
+        Offset  Type            Name            Description
+    -----------------------------------------------------------------------------------------------
+        0       u64             timestamp       Timestamp of the provided value.
+        8       u8              flags           Register flags: 1 - mutable, 2 - persistent.
+        9       u8              name_length     Length of the next field.
+        10      u8[<=93]        name            ASCII name, not terminated - see the previous field.
+        10..103 u8              type_id         Type of the value contained in this message.
+        11..104 u8[<=256]       encoded_payload Array of values whose types are defined by type_id.
+    -----------------------------------------------------------------------------------------------
+      <=360
+    """
+    MESSAGE_ID = 2
+
+    _MIN_ENCODED_SIZE = 11      # See the layout specification
+
+    _TIMESTAMP_STRUCT = struct.Struct('Q')
+
+    def __init__(self,
+                 timestamp: typing.Optional[typing.Union[Decimal, float]]=None,
+                 flags: typing.Optional[typing.Union[int, 'Flags']]=None,
+                 name: str=None,
+                 type_id: ValueType=None,
+                 value: _VALUE_TYPE_ANNOTATION=None):
+        self.timestamp = Decimal(timestamp or 0)            # Timestamp is in seconds
+        self.flags = Flags(flags or Flags())
+        self.name = str(name or '')
+        self.type_id = ValueType(type_id if type_id is not None else ValueType.EMPTY)
+        self.value = value
+        # Check whether the value is serializable early!
+        _enforce_serializability(self.type_id, self.value)
+
+    def __str__(self):
+        return 'timestamp=%r, flags=(%r), name=%r, type_id=%r, value=%r' % \
+               (self.timestamp, self.flags, self.name, self.type_id, self.value)
+
+    __repr__ = __str__
+
+    def _encode(self) -> bytes:
+        timestamp_ns = int(self.timestamp * _NANOSECONDS_PER_SECOND)
+        out = self._TIMESTAMP_STRUCT.pack(timestamp_ns) + \
+            bytes([int(self.flags)]) + \
+            _encode_name(self.name) + \
+            _encode_value(self.type_id, self.value)
+        assert self._MIN_ENCODED_SIZE <= len(out) <= 360     # The limits are defined in the layout specification
+        return out
+
+    @staticmethod
+    def _decode(encoded: bytes) -> 'DataResponseMessage':
+        if len(encoded) < DataResponseMessage._MIN_ENCODED_SIZE:
+            raise ValueError('Not enough data: %r' % encoded)
+
+        msg = DataResponseMessage()
+        timestamp_ns, = DataResponseMessage._TIMESTAMP_STRUCT.unpack(encoded[:8])
+        encoded = encoded[8:]
+        msg.timestamp = Decimal(timestamp_ns) / _NANOSECONDS_PER_SECOND
+        msg.flags, encoded = Flags(encoded[0]), encoded[1:]
+        msg.name, encoded = _decode_name(encoded)
+        msg.type_id, msg.value = _decode_value(encoded)
+        return msg
+
+
+class Flags:
+    """
+    Register flags. The flags describe basic properties of a register.
+    Mutable means that the register can be written.
+    Persistent means that the register retains its value even if power is disconnected.
+    An interesting case is when a register is persistent but not mutable - that implies that its value is constant.
+    """
+    def __init__(self, mask: typing.Union[int, 'Flags']=0):
+        mask = int(mask)            # This way we can accept either another instance of Flags or int
+        self.mutable    = (mask & 1) != 0
+        self.persistent = (mask & 2) != 0
+
+    def __str__(self):
+        return 'mutable=%r, persistent=%r' % (self.mutable, self.persistent)
+
+    __repr__ = __str__
+
+    def __int__(self):
+        return (1 if self.mutable else 0) |\
+               (2 if self.persistent else 0)
+
+
+def _enforce_serializability(type_id: ValueType, value: _VALUE_TYPE_ANNOTATION) -> None:
+    try:
+        _encode_value(type_id, value)
+    except Exception as ex:
+        raise ValueError('The specified value (with type ID %r) cannot be encoded' % self.type_id) from ex
+
+    if (type_id == ValueType.EMPTY) and (value is not None):
+        raise ValueError('Incorrect type ID %r for value of type %r' % (type_id, type(value)))
 
 
 def _encode_name(name: str) -> bytearray:
