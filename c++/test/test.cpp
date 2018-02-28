@@ -2037,3 +2037,45 @@ TEST_CASE("RegisterDiscoveryRequest")
                                       0x39, 0x30));
     REQUIRE(decode(msg.encode())->index == 12345);
 }
+
+
+TEST_CASE("RegisterDiscoveryResponse")
+{
+    using standard::MessageID;
+    using standard::RegisterDiscoveryResponse;
+
+    const auto decode = [](const auto& container)
+    {
+        return RegisterDiscoveryResponse::tryDecode(container.begin(), container.end());
+    };
+
+    RegisterDiscoveryResponse msg;
+    REQUIRE(msg.index == 0);
+    REQUIRE(msg.name.empty());
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::RegisterDiscoveryResponse), 0,
+                                      0, 0, 0, 0, 0, 0,
+                                      0, 0, 0));
+    REQUIRE(decode(msg.encode())->index == 0);
+    REQUIRE(decode(msg.encode())->name.empty());
+
+    msg.index = 12345;
+    while (msg.name.length() < msg.name.max_size())
+    {
+        msg.name.push_back('Z');
+    }
+
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::RegisterDiscoveryResponse), 0,
+                                      0, 0, 0, 0, 0, 0,
+                                      0x39, 0x30,
+                                      93,                                                       // name length
+                                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90        // name
+    ));
+    REQUIRE(decode(msg.encode())->index == 12345);
+    REQUIRE(decode(msg.encode())->name.length() == 93);
+    REQUIRE(decode(msg.encode())->name[0] == 'Z');
+    REQUIRE(decode(msg.encode())->name[92] == 'Z');
+}

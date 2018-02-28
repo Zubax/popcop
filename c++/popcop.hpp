@@ -1430,8 +1430,6 @@ enum class MessageID : std::uint16_t
     RegisterDataResponse            = 2,
     RegisterDiscoveryRequest        = 3,
     RegisterDiscoveryResponse       = 4,
-    RegisterTracingSetup            = 5,
-    RegisterTracingEvent            = 6,
 };
 
 /**
@@ -2389,6 +2387,93 @@ struct RegisterDiscoveryRequest
 
         RegisterDiscoveryRequest msg;
         msg.index = decoder.fetchU16();
+        return msg;
+    }
+};
+
+/**
+ * Discovery response - contains the name of the register at the index. Used for discovery purposes only.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u16             register_index  Index of the provided register name.
+ *      2       u8              name_length     Length of the next field.
+ *      3       u8[<=93]        name            ASCII name, not terminated - see the previous field.
+ *      3..96                                   reserved for future use
+ *  -----------------------------------------------------------------------------------------------
+ *      (max size unconstrained)
+ */
+struct RegisterDiscoveryResponse
+{
+    static constexpr std::size_t MinEncodedSize = 3;
+    static constexpr std::size_t MaxEncodedSize = 96;   ///< May be changed in the future, do not check when decoding
+
+    static constexpr MessageID ID = MessageID::RegisterDiscoveryResponse;
+
+    /**
+     * All fields of this message type.
+     */
+    std::uint16_t index = 0;
+    RegisterName name;
+
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
+     */
+    template <typename OutputIterator>
+    std::size_t encode(OutputIterator begin) const
+    {
+        presentation::StreamEncoder encoder(begin);
+        MessageHeader(ID).encode(encoder);
+        encoder.addU16(index);
+        name.encode(encoder);
+        assert(encoder.getOffset() >= (MinEncodedSize + MessageHeader::Size));
+        assert(encoder.getOffset() <= (MaxEncodedSize + MessageHeader::Size));
+        return encoder.getOffset();
+    }
+
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    DynamicMessageBuffer<MaxEncodedSize> encode() const
+    {
+        DynamicMessageBuffer<MaxEncodedSize> buf;
+        const std::size_t size = encode(std::back_inserter(buf));
+        (void) size;
+        assert(size == buf.size());
+        return buf;
+    }
+
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     */
+    template <typename InputIterator>
+    static std::optional<RegisterDiscoveryResponse> tryDecode(InputIterator begin, InputIterator end)
+    {
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
+        if (!header || (header->message_id != ID))
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() < MinEncodedSize)  // Max is not checked - extra data should be ignored
+        {
+            return {};
+        }
+
+        RegisterDiscoveryResponse msg;
+        msg.index = decoder.fetchU16();
+        if (!msg.name.tryDecode(decoder))
+        {
+            return {};
+        }
+
         return msg;
     }
 };
