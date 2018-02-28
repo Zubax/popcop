@@ -275,7 +275,7 @@ class TestStandardMessages(unittest.TestCase):
 
     def test_register_data_response(self):
         from popcop.transport import ReceivedFrame
-        from popcop.standard.register import DataResponseMessage, ValueType, Flags
+        from popcop.standard.register import DataResponseMessage, ValueType
         from popcop import STANDARD_FRAME_TYPE_CODE
 
         self.assertEqual(DataResponseMessage()._encode(), bytes([0, 0, 0, 0, 0, 0, 0, 0,
