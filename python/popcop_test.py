@@ -272,6 +272,7 @@ class TestStandardMessages(unittest.TestCase):
         self.assertEqual(msg.name, '012')
         self.assertEqual(msg.type_id, ValueType.STRING)
         self.assertEqual(msg.value, '456')
+        print(msg)
 
     def test_register_data_response(self):
         from popcop.transport import ReceivedFrame
@@ -317,6 +318,30 @@ class TestStandardMessages(unittest.TestCase):
         self.assertEqual(msg.name, '012')
         self.assertEqual(msg.type_id, ValueType.STRING)
         self.assertEqual(msg.value, '456')
+        print(msg)
+
+    def test_register_discovery_request(self):
+        from popcop.transport import ReceivedFrame
+        from popcop.standard import encode, decode
+        from popcop.standard.register import DiscoveryRequestMessage
+        from popcop import STANDARD_FRAME_TYPE_CODE
+
+        # Encoding a full frame then stripping the delimiters, type code, and CRC.
+        self.assertEqual(encode(DiscoveryRequestMessage())[1:-6], bytes([3, 0, 0, 0]))
+        self.assertEqual(encode(DiscoveryRequestMessage(12345))[1:-6], bytes([3, 0, 0x39, 0x30]))
+
+        msg = popcop.standard.decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE,
+                                                   bytes([3, 0, 0, 0]),
+                                                   0))
+        self.assertIsInstance(msg, DiscoveryRequestMessage)
+        self.assertEqual(msg.index, 0)
+
+        msg = popcop.standard.decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE,
+                                                   bytes([3, 0, 0x39, 0x30]),
+                                                   0))
+        self.assertIsInstance(msg, DiscoveryRequestMessage)
+        self.assertEqual(msg.index, 12345)
+        print(msg)
 
 
 @unittest.skipUnless(serial, 'PySerial is not available. Please install it to test this feature.')

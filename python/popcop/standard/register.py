@@ -154,7 +154,7 @@ class DataRequestMessage(MessageBase):
         _enforce_serializability(self.type_id, self.value)
 
     def __str__(self):
-        return 'name=%r, type_id=%r, value=%r' % (self.name, self.type_id, self.value)
+        return 'name=%r, type_id=%s, value=%r' % (self.name, self.type_id, self.value)
 
     __repr__ = __str__
 
@@ -214,7 +214,7 @@ class DataResponseMessage(MessageBase):
         _enforce_serializability(self.type_id, self.value)
 
     def __str__(self):
-        return 'timestamp=%r, flags=(%r), name=%r, type_id=%r, value=%r' % \
+        return 'timestamp=%r, flags=(%r), name=%r, type_id=%s, value=%r' % \
                (self.timestamp, self.flags, self.name, self.type_id, self.value)
 
     __repr__ = __str__
@@ -241,6 +241,34 @@ class DataResponseMessage(MessageBase):
         msg.name, encoded = _decode_name(encoded)
         msg.type_id, msg.value = _decode_value(encoded)
         return msg
+
+
+class DiscoveryRequestMessage(MessageBase):
+    """
+    Request of register name by index. Used for discovery purposes only.
+
+        Offset  Type            Name            Description
+    -----------------------------------------------------------------------------------------------
+        0       u16             register_index  Index of the register name of which is requested.
+    -----------------------------------------------------------------------------------------------
+        2
+    """
+    MESSAGE_ID = 3
+
+    def __init__(self, index: int=None):
+        self.index = int(index or 0)
+
+    def __str__(self):
+        return 'index=%r' % self.index
+
+    __repr__ = __str__
+
+    def _encode(self) -> bytes:
+        return struct.pack('H', self.index)
+
+    @staticmethod
+    def _decode(encoded: bytes) -> 'DiscoveryRequestMessage':
+        return DiscoveryRequestMessage(struct.unpack('H', encoded)[0])
 
 
 class Flags:
