@@ -23,11 +23,25 @@
 # Author: Pavel Kirienko <pavel.kirienko@zubax.com>
 #
 
-from .string_representable import StringRepresentable
+import datetime
+import enum
 
 
-class MessageBase(StringRepresentable):
-    MESSAGE_ID = None
+class StringRepresentable:
+    def __str__(self):
+        def do_repr(x) -> str:
+            if isinstance(x, (bytes, bytearray)):
+                return x.hex()
+            elif isinstance(x, datetime.datetime):
+                return x.isoformat()
+            elif isinstance(x, enum.Enum):
+                return str(x)
+            else:
+                return repr(x)
 
-    def _encode(self) -> bytes:
-        raise NotImplementedError
+        fields = ', '.join(('%s=%s' % (k, do_repr(v)))
+                           for k, v in vars(self).items())
+
+        return '%s(%s)' % (type(self).__name__, fields)
+
+    __repr__ = __str__

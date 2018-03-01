@@ -28,6 +28,7 @@ import typing
 import struct
 from decimal import Decimal
 from .message_base import MessageBase
+from .string_representable import StringRepresentable
 
 
 MAX_NAME_LENGTH = 93
@@ -153,11 +154,6 @@ class DataRequestMessage(MessageBase):
         # Check whether the value is serializable early!
         _enforce_serializability(self.type_id, self.value)
 
-    def __str__(self):
-        return 'name=%r, type_id=%s, value=%r' % (self.name, self.type_id, self.value)
-
-    __repr__ = __str__
-
     def _encode(self) -> bytes:
         out = _encode_name(self.name) + _encode_value(self.type_id, self.value)
         assert 2 <= len(out) <= 351     # The limits are defined in the layout specification
@@ -213,12 +209,6 @@ class DataResponseMessage(MessageBase):
         # Check whether the value is serializable early!
         _enforce_serializability(self.type_id, self.value)
 
-    def __str__(self):
-        return 'timestamp=%r, flags=(%r), name=%r, type_id=%s, value=%r' % \
-               (self.timestamp, self.flags, self.name, self.type_id, self.value)
-
-    __repr__ = __str__
-
     def _encode(self) -> bytes:
         timestamp_ns = int(self.timestamp * _NANOSECONDS_PER_SECOND)
         out = self._TIMESTAMP_STRUCT.pack(timestamp_ns) + \
@@ -258,11 +248,6 @@ class DiscoveryRequestMessage(MessageBase):
     def __init__(self, index: int=None):
         self.index = int(index or 0)
 
-    def __str__(self):
-        return 'index=%r' % self.index
-
-    __repr__ = __str__
-
     def _encode(self) -> bytes:
         return struct.pack('H', self.index)
 
@@ -294,11 +279,6 @@ class DiscoveryResponseMessage(MessageBase):
         self.index = int(index or 0)
         self.name = str(name or '')
 
-    def __str__(self):
-        return 'index=%r, name=%r' % (self.index, self.name)
-
-    __repr__ = __str__
-
     def _encode(self) -> bytes:
         return bytes(struct.pack('H', self.index) + _encode_name(self.name))
 
@@ -312,7 +292,7 @@ class DiscoveryResponseMessage(MessageBase):
         return DiscoveryResponseMessage(index=index, name=name)
 
 
-class Flags:
+class Flags(StringRepresentable):
     """
     Register flags. The flags describe basic properties of a register.
     Mutable means that the register can be written.
@@ -323,11 +303,6 @@ class Flags:
         mask = int(mask)            # This way we can accept either another instance of Flags or int
         self.mutable    = (mask & 1) != 0
         self.persistent = (mask & 2) != 0
-
-    def __str__(self):
-        return 'mutable=%r, persistent=%r' % (self.mutable, self.persistent)
-
-    __repr__ = __str__
 
     def __int__(self):
         return (1 if self.mutable else 0) |\

@@ -93,22 +93,6 @@ class NodeInfoMessage(MessageBase):
         """
         return (not self.node_description) and (not self.node_name)
 
-    def __str__(self):
-        out = 'sw_crc=%r, sw_vcs=%r, sw_ts=%r, ' % (self.software_image_crc, self.software_vcs_commit_id,
-                                                    self.software_build_timestamp_utc)
-
-        out += 'sw_ver=%r.%r, hw_ver=%r.%r, mode=%s, guid=%s, ' % \
-               (self.software_version_major, self.software_version_minor,
-                self.hardware_version_major, self.hardware_version_minor,
-                self.mode, self.globally_unique_id.hex())
-
-        out += 'name=%r, desc=%r, bed=%r, red=%r, coa=%s' % \
-               (self.node_name, self.node_description, self.build_environment_description,
-                self.runtime_environment_description, self.certificate_of_authenticity.hex())
-        return out
-
-    __repr__ = __str__
-
     def _encode(self) -> bytes:
         flags = 0
         if isinstance(self.software_image_crc, int):
