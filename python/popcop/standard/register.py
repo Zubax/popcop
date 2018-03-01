@@ -268,7 +268,48 @@ class DiscoveryRequestMessage(MessageBase):
 
     @staticmethod
     def _decode(encoded: bytes) -> 'DiscoveryRequestMessage':
-        return DiscoveryRequestMessage(struct.unpack('H', encoded)[0])
+        return DiscoveryRequestMessage(struct.unpack('H', encoded[:2])[0])
+
+
+class DiscoveryResponseMessage(MessageBase):
+    """
+    Discovery response - contains the name of the register at the index. Used for discovery purposes only.
+
+        Offset  Type            Name            Description
+    -----------------------------------------------------------------------------------------------
+        0       u16             register_index  Index of the provided register name.
+        2       u8              name_length     Length of the next field.
+        3       u8[<=93]        name            ASCII name, not terminated - see the previous field.
+        3..96                                   reserved for future use
+    -----------------------------------------------------------------------------------------------
+        (max size unconstrained)
+    """
+    MESSAGE_ID = 4
+
+    _MIN_ENCODED_SIZE = 3      # See the layout specification
+
+    def __init__(self,
+                 index: int=None,
+                 name: str=None):
+        self.index = int(index or 0)
+        self.name = str(name or '')
+
+    def __str__(self):
+        return 'index=%r, name=%r' % (self.index, self.name)
+
+    __repr__ = __str__
+
+    def _encode(self) -> bytes:
+        return bytes(struct.pack('H', self.index) + _encode_name(self.name))
+
+    @staticmethod
+    def _decode(encoded: bytes) -> 'DiscoveryResponseMessage':
+        if len(encoded) < DiscoveryResponseMessage._MIN_ENCODED_SIZE:
+            raise ValueError('Message is too short: %r' % encoded)
+
+        index, = struct.unpack('H', encoded[:2])
+        name, _ = _decode_name(encoded[2:])
+        return DiscoveryResponseMessage(index=index, name=name)
 
 
 class Flags:

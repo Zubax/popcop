@@ -330,17 +330,35 @@ class TestStandardMessages(unittest.TestCase):
         self.assertEqual(encode(DiscoveryRequestMessage())[1:-6], bytes([3, 0, 0, 0]))
         self.assertEqual(encode(DiscoveryRequestMessage(12345))[1:-6], bytes([3, 0, 0x39, 0x30]))
 
-        msg = popcop.standard.decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE,
-                                                   bytes([3, 0, 0, 0]),
-                                                   0))
+        msg = decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE, bytes([3, 0, 0, 0]), 0))
         self.assertIsInstance(msg, DiscoveryRequestMessage)
         self.assertEqual(msg.index, 0)
 
-        msg = popcop.standard.decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE,
-                                                   bytes([3, 0, 0x39, 0x30]),
-                                                   0))
+        msg = decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE, bytes([3, 0, 0x39, 0x30]), 0))
         self.assertIsInstance(msg, DiscoveryRequestMessage)
         self.assertEqual(msg.index, 12345)
+        print(msg)
+
+    def test_register_discovery_response(self):
+        from popcop.transport import ReceivedFrame
+        from popcop.standard import encode, decode
+        from popcop.standard.register import DiscoveryResponseMessage
+        from popcop import STANDARD_FRAME_TYPE_CODE
+
+        # Encoding a full frame then stripping the delimiters, type code, and CRC.
+        self.assertEqual(encode(DiscoveryResponseMessage())[1:-6], bytes([4, 0, 0, 0, 0]))
+        self.assertEqual(encode(DiscoveryResponseMessage(12345, 'Hello'))[1:-6],
+                         b'\x04\x00\x39\x30\x05Hello')
+
+        msg = decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE, bytes([4, 0, 0, 0, 0]), 0))
+        self.assertIsInstance(msg, DiscoveryResponseMessage)
+        self.assertEqual(msg.index, 0)
+        self.assertEqual(msg.name, '')
+
+        msg = decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE, bytes([4, 0, 0x39, 0x30, 5]) + b'Hello', 0))
+        self.assertIsInstance(msg, DiscoveryResponseMessage)
+        self.assertEqual(msg.index, 12345)
+        self.assertEqual(msg.name, 'Hello')
         print(msg)
 
 
