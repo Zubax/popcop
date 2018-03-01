@@ -2005,17 +2005,17 @@ TEST_CASE("RegisterDataResponse")
 }
 
 
-TEST_CASE("RegisterDiscoveryRequest")
+TEST_CASE("RegisterDiscoveryRequestMessage")
 {
     using standard::MessageID;
-    using standard::RegisterDiscoveryRequest;
+    using standard::RegisterDiscoveryRequestMessage;
 
     const auto decode = [](const auto& container)
     {
-        return RegisterDiscoveryRequest::tryDecode(container.begin(), container.end());
+        return RegisterDiscoveryRequestMessage::tryDecode(container.begin(), container.end());
     };
 
-    RegisterDiscoveryRequest msg;
+    RegisterDiscoveryRequestMessage msg;
     REQUIRE(msg.index == 0);
     REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::RegisterDiscoveryRequest), 0,
                                       0, 0));
@@ -2028,17 +2028,17 @@ TEST_CASE("RegisterDiscoveryRequest")
 }
 
 
-TEST_CASE("RegisterDiscoveryResponse")
+TEST_CASE("RegisterDiscoveryResponseMessage")
 {
     using standard::MessageID;
-    using standard::RegisterDiscoveryResponse;
+    using standard::RegisterDiscoveryResponseMessage;
 
     const auto decode = [](const auto& container)
     {
-        return RegisterDiscoveryResponse::tryDecode(container.begin(), container.end());
+        return RegisterDiscoveryResponseMessage::tryDecode(container.begin(), container.end());
     };
 
-    RegisterDiscoveryResponse msg;
+    RegisterDiscoveryResponseMessage msg;
     REQUIRE(msg.index == 0);
     REQUIRE(msg.name.empty());
     REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::RegisterDiscoveryResponse), 0,

@@ -2335,7 +2335,7 @@ struct RegisterDataResponseMessage
  *  -----------------------------------------------------------------------------------------------
  *      2
  */
-struct RegisterDiscoveryRequest
+struct RegisterDiscoveryRequestMessage
 {
     static constexpr std::size_t EncodedSize = 2;
 
@@ -2379,7 +2379,7 @@ struct RegisterDiscoveryRequest
      * The message ID value in the header will be checked.
      */
     template <typename InputIterator>
-    static std::optional<RegisterDiscoveryRequest> tryDecode(InputIterator begin, InputIterator end)
+    static std::optional<RegisterDiscoveryRequestMessage> tryDecode(InputIterator begin, InputIterator end)
     {
         presentation::StreamDecoder decoder(begin, end);
         const auto header = MessageHeader::tryDecode(decoder);
@@ -2393,7 +2393,7 @@ struct RegisterDiscoveryRequest
             return {};
         }
 
-        RegisterDiscoveryRequest msg;
+        RegisterDiscoveryRequestMessage msg;
         msg.index = decoder.fetchU16();
         return msg;
     }
@@ -2411,7 +2411,7 @@ struct RegisterDiscoveryRequest
  *  -----------------------------------------------------------------------------------------------
  *      (max size unconstrained)
  */
-struct RegisterDiscoveryResponse
+struct RegisterDiscoveryResponseMessage
 {
     static constexpr std::size_t MinEncodedSize = 3;
     static constexpr std::size_t MaxEncodedSize = 96;   ///< May be changed in the future, do not check when decoding
@@ -2461,7 +2461,7 @@ struct RegisterDiscoveryResponse
      * The message ID value in the header will be checked.
      */
     template <typename InputIterator>
-    static std::optional<RegisterDiscoveryResponse> tryDecode(InputIterator begin, InputIterator end)
+    static std::optional<RegisterDiscoveryResponseMessage> tryDecode(InputIterator begin, InputIterator end)
     {
         presentation::StreamDecoder decoder(begin, end);
         const auto header = MessageHeader::tryDecode(decoder);
@@ -2475,7 +2475,7 @@ struct RegisterDiscoveryResponse
             return {};
         }
 
-        RegisterDiscoveryResponse msg;
+        RegisterDiscoveryResponseMessage msg;
         msg.index = decoder.fetchU16();
         if (!msg.name.tryDecode(decoder))
         {
