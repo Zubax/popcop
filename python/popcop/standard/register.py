@@ -34,6 +34,18 @@ from .string_representable import StringRepresentable
 MAX_NAME_LENGTH = 93
 MAX_ENCODED_VALUE_LENGTH = 256
 
+#: Optional high-level naming convention.
+#: If the default value is defined for a register, it can be represented in a different register
+#: that has the same name suffixed with '='. Minimum and maximum values can be represented likewise,
+#: if necessary. For example:
+#:  Register name: "foo", default value 42, minimum 12, maximum 72.
+#:  Default value is stored in a read-only register "foo=" with the constant value 42.
+#:  Minimum and maximum values are stored in registers named "foo<" and "foo>", respectively.
+NAME_SUFFIX_DEFAULT_VALUE = '='
+NAME_SUFFIX_MINIMUM_VALUE = '<'
+NAME_SUFFIX_MAXIMUM_VALUE = '>'
+# More suffixes can be defined in the future.
+
 
 class ValueType(enum.IntEnum):
     """

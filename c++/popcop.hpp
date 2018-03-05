@@ -1770,6 +1770,23 @@ struct RegisterName : public util::FixedCapacityString<93>
     using Base::operator=;
 
     /**
+     * Optional high-level naming convention.
+     * If the default value is defined for a register, it can be represented in a different register
+     * that has the same name suffixed with '='. Minimum and maximum values can be represented likewise,
+     * if necessary. For example:
+     *  Register name: "foo", default value 42, minimum 12, maximum 72.
+     *  Default value is stored in a read-only register "foo=" with the constant value 42.
+     *  Minimum and maximum values are stored in registers named "foo<" and "foo>", respectively.
+     */
+    struct Suffix
+    {
+        static constexpr char DefaultValue = '=';
+        static constexpr char MinimumValue = '<';
+        static constexpr char MaximumValue = '>';
+        // Other optional suffixes may be added in the future.
+    };
+
+    /**
      * Serializes the object into the provided encoder.
      */
     template <typename OutputIterator>
