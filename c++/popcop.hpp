@@ -802,12 +802,34 @@ public:
         buf_[len_] = '\0';
     }
 
+    void resize(std::size_t sz, char c = char())
+    {
+        while (len_ < sz)
+        {
+            push_back(c);
+        }
+
+        while (len_ > sz)
+        {
+            pop_back();
+        }
+    }
+
     void push_back(char c)
     {
         if (len_ < Capacity)
         {
             buf_[len_] = c;
             ++len_;
+        }
+        buf_[len_] = '\0';
+    }
+
+    void pop_back()
+    {
+        if (len_ > 0)
+        {
+            --len_;
         }
         buf_[len_] = '\0';
     }

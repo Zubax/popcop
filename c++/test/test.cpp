@@ -737,6 +737,13 @@ TEST_CASE("FixedCapacityString")
     REQUIRE(s2 == "hElLo/*-12 World!");
 
     REQUIRE("[hElLo/*-12 World!]" == ("[" + s2 + "]"));
+
+    s2.resize(20, 'Z');
+    REQUIRE(s2 == "hElLo/*-12 World!ZZZ");
+    s2.resize(10);
+    REQUIRE(s2 == "hElLo/*-12");
+    s2.resize(0);
+    REQUIRE(s2.empty());
 }
 
 
