@@ -320,6 +320,24 @@ class TestStandardMessages(unittest.TestCase):
         self.assertEqual(msg.value, '456')
         print(msg)
 
+        msg = popcop.standard.decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE,
+                                                   bytes([2, 0,
+                                                          0xc0, 0x68, 0x8a, 0x7e, 0x0, 0x0, 0x0, 0x0,  # TS as above
+                                                          0,
+                                                          16, 99, 116, 108, 46, 110, 117, 109, 95, 97, 116, 116, 101,
+                                                          109, 112, 116, 115,
+                                                          9,
+                                                          100, 0, 0, 0]),
+                                                   0))
+        self.assertIsInstance(msg, DataResponseMessage)
+        self.assertEqual(msg.timestamp, Decimal('2.123'))
+        self.assertEqual(msg.flags.mutable, False)
+        self.assertEqual(msg.flags.persistent, False)
+        self.assertEqual(msg.name, 'ctl.num_attempts')
+        self.assertEqual(msg.type_id, ValueType.U32)
+        self.assertEqual(msg.value, [100])
+        print(msg)
+
     def test_register_discovery_request(self):
         from popcop.transport import ReceivedFrame
         from popcop.standard import encode, decode

@@ -25,7 +25,6 @@
 
 import enum
 import typing
-import struct
 from decimal import Decimal
 from .message_base import MessageBase
 from .string_representable import StringRepresentable
@@ -205,8 +204,6 @@ class DataResponseMessage(MessageBase):
 
     _MIN_ENCODED_SIZE = 11      # See the layout specification
 
-    _TIMESTAMP_STRUCT = struct.Struct('Q')
-
     def __init__(self,
                  timestamp: typing.Optional[typing.Union[Decimal, float]]=None,
                  flags: typing.Optional[typing.Union[int, 'Flags']]=None,
@@ -223,7 +220,7 @@ class DataResponseMessage(MessageBase):
 
     def _encode(self) -> bytes:
         timestamp_ns = int(self.timestamp * _NANOSECONDS_PER_SECOND)
-        out = self._TIMESTAMP_STRUCT.pack(timestamp_ns) + \
+        out = _struct_pack('Q', timestamp_ns) + \
             bytes([int(self.flags)]) + \
             _encode_name(self.name) + \
             _encode_value(self.type_id, self.value)
@@ -236,7 +233,7 @@ class DataResponseMessage(MessageBase):
             raise ValueError('Not enough data: %r' % encoded)
 
         msg = DataResponseMessage()
-        timestamp_ns, = DataResponseMessage._TIMESTAMP_STRUCT.unpack(encoded[:8])
+        timestamp_ns, = _struct_unpack('Q', encoded[:8])
         encoded = encoded[8:]
         msg.timestamp = Decimal(timestamp_ns) / _NANOSECONDS_PER_SECOND
         msg.flags, encoded = Flags(encoded[0]), encoded[1:]
@@ -261,11 +258,11 @@ class DiscoveryRequestMessage(MessageBase):
         self.index = int(index or 0)
 
     def _encode(self) -> bytes:
-        return struct.pack('H', self.index)
+        return _struct_pack('H', self.index)
 
     @staticmethod
     def _decode(encoded: bytes) -> 'DiscoveryRequestMessage':
-        return DiscoveryRequestMessage(struct.unpack('H', encoded[:2])[0])
+        return DiscoveryRequestMessage(_struct_unpack('H', encoded[:2])[0])
 
 
 class DiscoveryResponseMessage(MessageBase):
@@ -292,14 +289,14 @@ class DiscoveryResponseMessage(MessageBase):
         self.name = str(name or '')
 
     def _encode(self) -> bytes:
-        return bytes(struct.pack('H', self.index) + _encode_name(self.name))
+        return bytes(_struct_pack('H', self.index) + _encode_name(self.name))
 
     @staticmethod
     def _decode(encoded: bytes) -> 'DiscoveryResponseMessage':
         if len(encoded) < DiscoveryResponseMessage._MIN_ENCODED_SIZE:
             raise ValueError('Message is too short: %r' % encoded)
 
-        index, = struct.unpack('H', encoded[:2])
+        index, = _struct_unpack('H', encoded[:2])
         name, _ = _decode_name(encoded[2:])
         return DiscoveryResponseMessage(index=index, name=name)
 
@@ -329,6 +326,21 @@ def _enforce_serializability(type_id: ValueType, value: _VALUE_TYPE_ANNOTATION) 
 
     if (type_id == ValueType.EMPTY) and (value is not None):
         raise ValueError('Incorrect type ID %r for value of type %r' % (type_id, type(value)))
+
+
+def _struct_pack(fmt: str, *values) -> bytes:
+    from struct import pack
+    return pack('<' + fmt, *values)
+
+
+def _struct_unpack(fmt: str, buffer: bytes) -> tuple:
+    from struct import unpack
+    return unpack('<' + fmt, buffer)
+
+
+def _compute_struct_size(fmt: str) -> int:
+    from struct import Struct
+    return Struct('<' + fmt).size
 
 
 def _encode_name(name: str) -> bytearray:
@@ -415,7 +427,7 @@ def _encode_value(type_id: ValueType, value: _VALUE_TYPE_ANNOTATION) -> bytearra
             value = bytes(value)
 
         struct_format = str(len(value)) + _VALUE_TYPE_TO_STRUCT_FORMAT[type_id]
-        encoded = struct.pack(struct_format, value)
+        encoded = _struct_pack(struct_format, value)
 
     elif kind == ValueKind.ARRAY_OF_SCALARS:
         try:
@@ -426,7 +438,7 @@ def _encode_value(type_id: ValueType, value: _VALUE_TYPE_ANNOTATION) -> bytearra
         native_type = VALUE_TYPE_TO_NATIVE_TYPE[type_id]
         value = [native_type(x) for x in value]
         struct_format = str(len(value)) + _VALUE_TYPE_TO_STRUCT_FORMAT[type_id]
-        encoded = struct.pack(struct_format, *value)    # Note that we must pass one scalar per argument
+        encoded = _struct_pack(struct_format, *value)    # Note that we must pass one scalar per argument
 
     else:
         raise ValueError('Unknown value type kind: %r' % kind)
@@ -470,7 +482,7 @@ def _decode_value(encoded: bytes) -> typing.Tuple[ValueType, _VALUE_TYPE_ANNOTAT
 
     elif kind == ValueKind.SINGLE_VARIABLE_SIZE_ITEM:
         struct_format = str(len(encoded)) + _VALUE_TYPE_TO_STRUCT_FORMAT[type_id]
-        value, = struct.unpack(struct_format, encoded)
+        value, = _struct_unpack(struct_format, encoded)
         if type_id == ValueType.STRING:
             value = value.decode(errors='replace')
 
@@ -478,10 +490,9 @@ def _decode_value(encoded: bytes) -> typing.Tuple[ValueType, _VALUE_TYPE_ANNOTAT
 
     elif kind == ValueKind.ARRAY_OF_SCALARS:
         struct_format = _VALUE_TYPE_TO_STRUCT_FORMAT[type_id]
-        element_size = struct.Struct(struct_format).size
-        num_elements = len(encoded) // element_size
+        num_elements = len(encoded) // _compute_struct_size(struct_format)
         struct_format = str(num_elements) + struct_format
-        value = list(struct.unpack(struct_format, encoded))
+        value = list(_struct_unpack(struct_format, encoded))
 
     else:
         raise ValueError('Unknown value type kind: %r' % kind)
