@@ -1895,6 +1895,18 @@ struct RegisterValueTypes
         F32
     >;
 
+private:
+    template <typename Scalar>
+    struct ValueTypeForScalarImpl;
+
+public:
+    /**
+     * This convenience type reduces the amount of boilerplate needed to map types from simple
+     * scalar types to value vector types.
+     */
+    template <typename Scalar>
+    using ValueTypeForScalar = typename ValueTypeForScalarImpl<Scalar>::T;
+
 protected:  // This type cannot be instantiated directly
     RegisterValueTypes() = default;
     ~RegisterValueTypes() = default;
@@ -1902,6 +1914,21 @@ protected:  // This type cannot be instantiated directly
     /// The number of bytes the value is allowed to take in the encoded form.
     static constexpr std::size_t MaxEncodedValueSize = 256;
 };
+
+template <> struct RegisterValueTypes::ValueTypeForScalarImpl<bool> { using T = Boolean; };
+
+template <> struct RegisterValueTypes::ValueTypeForScalarImpl<std::int64_t> { using T = I64; };
+template <> struct RegisterValueTypes::ValueTypeForScalarImpl<std::int32_t> { using T = I32; };
+template <> struct RegisterValueTypes::ValueTypeForScalarImpl<std::int16_t> { using T = I16; };
+template <> struct RegisterValueTypes::ValueTypeForScalarImpl<std::int8_t>  { using T = I8;  };
+
+template <> struct RegisterValueTypes::ValueTypeForScalarImpl<std::uint64_t> { using T = U64; };
+template <> struct RegisterValueTypes::ValueTypeForScalarImpl<std::uint32_t> { using T = U32; };
+template <> struct RegisterValueTypes::ValueTypeForScalarImpl<std::uint16_t> { using T = U16; };
+template <> struct RegisterValueTypes::ValueTypeForScalarImpl<std::uint8_t>  { using T = U8;  };
+
+template <> struct RegisterValueTypes::ValueTypeForScalarImpl<double> { using T = F64; };
+template <> struct RegisterValueTypes::ValueTypeForScalarImpl<float>  { using T = F32;  };
 
 } // namespace detail_
 
