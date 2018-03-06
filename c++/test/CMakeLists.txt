@@ -33,7 +33,7 @@ if(NOT CMAKE_BUILD_TYPE)
         FORCE)
 endif()
 
-include_directories(..)
+include_directories(.. .)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wextra -Werror -pedantic")
 

@@ -43,6 +43,14 @@
 #include <chrono>
 #include <array>
 
+/*
+ * A third-party dependency - Senoval - which is a simple header-only library of
+ * C++17 classes for real-time embedded systems. The user is expected to make the
+ * headers available for inclusion for Popcop.
+ */
+#include <senoval/string.hpp>
+#include <senoval/vector.hpp>
+
 
 namespace popcop
 {
@@ -725,447 +733,6 @@ public:
 } // namespace transport
 
 /**
- * Utilities and helpers.
- */
-namespace util
-{
-/**
- * A string with fixed storage, API like std::string.
- */
-template <std::size_t Capacity_>
-class FixedCapacityString
-{
-public:
-    static constexpr std::size_t Capacity = Capacity_;
-
-    static_assert(Capacity > 0, "Capacity must be positive");
-
-private:
-    template <std::size_t C>
-    friend class FixedCapacityString;
-
-    std::size_t len_ = 0;
-    char buf_[Capacity + 1];
-
-public:
-    FixedCapacityString() // NOLINT
-    {
-        buf_[len_] = '\0';
-    }
-
-    /// Implicit on purpose
-    FixedCapacityString(const char* const initializer) // NOLINT
-    {
-        (*this) += initializer;
-    }
-
-    template <typename InputIterator>
-    FixedCapacityString(InputIterator begin, const InputIterator end) // NOLINT
-    {
-        while ((begin != end) && (len_ < Capacity))
-        {
-            buf_[len_] = static_cast<char>(*begin);
-            ++len_;
-            ++begin;
-        }
-        buf_[len_] = '\0';
-    }
-
-    template <std::size_t C>
-    FixedCapacityString(const FixedCapacityString<C>& initializer) // NOLINT
-    {
-        (*this) += initializer;
-    }
-
-    /*
-     * std::string API
-     */
-    using value_type = char;
-    using size_type = std::size_t;
-    using iterator = const char*;           ///< Const is intentional
-    using const_iterator = const char*;
-
-    [[nodiscard]] constexpr std::size_t capacity() const { return Capacity; }
-    [[nodiscard]] constexpr std::size_t max_size() const { return Capacity; }
-
-    [[nodiscard]] std::size_t size()   const { return len_; }
-    [[nodiscard]] std::size_t length() const { return len_; }
-
-    [[nodiscard]] // nodiscard prevents confusion with clear()
-    bool empty() const { return len_ == 0; }
-
-    [[nodiscard]] const char* c_str() const { return &buf_[0]; }
-
-    void clear()
-    {
-        len_ = 0;
-        buf_[len_] = '\0';
-    }
-
-    void resize(std::size_t sz, char c = char())
-    {
-        while (len_ < sz)
-        {
-            push_back(c);
-        }
-
-        while (len_ > sz)
-        {
-            pop_back();
-        }
-    }
-
-    void push_back(char c)
-    {
-        if (len_ < Capacity)
-        {
-            buf_[len_] = c;
-            ++len_;
-        }
-        buf_[len_] = '\0';
-    }
-
-    void pop_back()
-    {
-        if (len_ > 0)
-        {
-            --len_;
-        }
-        buf_[len_] = '\0';
-    }
-
-    [[nodiscard]] char&       front()       { return operator[](0); }
-    [[nodiscard]] const char& front() const { return operator[](0); }
-
-    [[nodiscard]]
-    char& back()
-    {
-        if (len_ > 0)
-        {
-            return buf_[len_ - 1U];
-        }
-        else
-        {
-            assert(false);
-            return buf_[0];
-        }
-    }
-    [[nodiscard]] const char& back() const { return const_cast<FixedCapacityString*>(this)->back(); }
-
-    /*
-     * Iterators - only const iterators are provided for safety reasons.
-     * It is easy to accidentally bring the object into an invalid state by zeroing a char in the middle.
-     */
-    [[nodiscard]] const char* begin() const { return &buf_[0]; }
-    [[nodiscard]] const char* end()   const { return &buf_[len_]; }
-
-    /*
-     * Operators
-     */
-    template <typename T>
-    FixedCapacityString& operator=(const T& s)
-    {
-        clear();
-        (*this) += s;
-        return *this;
-    }
-
-    template <typename T, typename = decltype(std::declval<T>().c_str())>
-    FixedCapacityString& operator+=(const T& s)
-    {
-        (*this) += s.c_str();
-        return *this;
-    }
-
-    FixedCapacityString& operator+=(const char* p)
-    {
-        while ((*p != '\0') && (len_ < Capacity))
-        {
-            buf_[len_] = *p++;
-            ++len_;
-        }
-        buf_[len_] = '\0';
-        return *this;
-    }
-
-    FixedCapacityString& operator+=(char c)
-    {
-        push_back(c);
-        return *this;
-    }
-
-    [[nodiscard]]
-    char& operator[](std::size_t index)
-    {
-        if (index < len_)
-        {
-            return buf_[index];
-        }
-        else
-        {
-            assert(false);
-            return back();
-        }
-    }
-    [[nodiscard]]
-    const char& operator[](std::size_t index) const
-    {
-        return const_cast<FixedCapacityString*>(this)->operator[](index);
-    }
-
-    template <typename T, typename = decltype(std::declval<T>().begin())>
-    [[nodiscard]]
-    bool operator==(const T& s) const
-    {
-        return std::equal(begin(), end(), std::begin(s), std::end(s));
-    }
-
-    [[nodiscard]]
-    bool operator==(const char* s) const
-    {
-        return 0 == std::strncmp(this->c_str(), s, sizeof(buf_));
-    }
-
-    template <typename T>
-    [[nodiscard]]
-    bool operator!=(const T& s) const
-    {
-        return !operator==(s);
-    }
-
-    /*
-     * Helpers
-     */
-    [[nodiscard]]   // nodiscard is used to emphasize that the method is not mutating
-    FixedCapacityString<Capacity> toLowerCase() const
-    {
-        FixedCapacityString<Capacity> out;
-        std::transform(begin(), end(), std::back_inserter(out), [](char c) { return char(std::tolower(c)); });
-        return out;
-    }
-
-    [[nodiscard]]   // nodiscard is used to emphasize that the method is not mutating
-    FixedCapacityString<Capacity> toUpperCase() const
-    {
-        FixedCapacityString<Capacity> out;
-        std::transform(begin(), end(), std::back_inserter(out), [](char c) { return char(std::toupper(c)); });
-        return out;
-    }
-};
-
-template <std::size_t LeftCapacity, std::size_t RightCapacity>
-[[nodiscard]]
-inline auto operator+(const FixedCapacityString<LeftCapacity>& left, const FixedCapacityString<RightCapacity>& right)
-{
-    FixedCapacityString<LeftCapacity + RightCapacity> out(left);
-    out += right;
-    return out;
-}
-
-template <std::size_t Capacity>
-[[nodiscard]]
-inline auto operator+(const FixedCapacityString<Capacity>& left, const char* right)
-{
-    FixedCapacityString<Capacity> out(left);
-    out += right;
-    return out;
-}
-
-template <std::size_t Capacity>
-[[nodiscard]]
-inline auto operator+(const char* left, const FixedCapacityString<Capacity>& right)
-{
-    FixedCapacityString<Capacity> out(left);
-    out += right;
-    return out;
-}
-
-template <std::size_t Capacity>
-[[nodiscard]]
-inline bool operator==(const char* left, const FixedCapacityString<Capacity>& right)
-{
-    return right == left;
-}
-
-template <std::size_t Capacity>
-[[nodiscard]]
-inline bool operator!=(const char* left, const FixedCapacityString<Capacity>& right)
-{
-    return right != left;
-}
-
-/**
- * A vector with fixed storage, API like std::vector<>.
- * This implementation supports only trivial types, since that is sufficient for the needs of this library.
- */
-template <typename T, std::size_t Capacity_>
-class FixedCapacityVector
-{
-public:
-    static constexpr std::size_t Capacity = Capacity_;
-
-    static_assert(Capacity > 0, "Capacity must be positive");
-    static_assert(std::is_trivial<T>::value, "This implementation supports only trivial types.");
-
-private:
-    std::size_t len_ = 0;
-    T buf_[Capacity];       // Note that we don't zero-initialize, just like std containers
-
-public:
-    FixedCapacityVector() = default;
-
-    // Implicit by design
-    FixedCapacityVector(std::initializer_list<T> values)
-    {
-        for (const auto& v : values)
-        {
-            push_back(v);
-        }
-    }
-
-    template <typename InputIterator, typename = std::enable_if_t<!std::is_integral_v<InputIterator>>>
-    FixedCapacityVector(InputIterator begin, const InputIterator end) // NOLINT
-    {
-        while ((begin != end) && (len_ < Capacity))
-        {
-            buf_[len_] = T(*begin);
-            ++len_;
-            ++begin;
-        }
-    }
-
-    FixedCapacityVector(std::size_t count, const T& value)
-    {
-        while (count --> 0)
-        {
-            push_back(value);
-        }
-    }
-
-    template <typename Container, typename = decltype(std::begin(std::declval<Container>()))>
-    void append(const Container& other)
-    {
-        std::copy(std::begin(other), std::end(other), std::back_inserter(*this));
-    }
-
-    /*
-     * std::vector API
-     */
-    using value_type = T;
-    using size_type = std::size_t;
-    using iterator = T*;
-    using const_iterator = const T*;
-
-    [[nodiscard]] constexpr std::size_t capacity() const { return Capacity; }
-    [[nodiscard]] constexpr std::size_t max_size() const { return Capacity; }
-
-    [[nodiscard]] std::size_t size() const { return len_; }
-
-    [[nodiscard]] // nodiscard prevents confusion with clear()
-    bool empty() const { return len_ == 0; }
-
-    void clear()
-    {
-        len_ = 0;
-    }
-
-    void resize(const std::size_t count, const T& fill_value = T{})
-    {
-        assert(count <= Capacity);
-        if (count < len_)
-        {
-            len_ = count;
-        }
-        else
-        {
-            while (count > len_)
-            {
-                push_back(fill_value);
-            }
-        }
-        assert(size() == count);    // Will fail if count > Capacity
-    }
-
-    void push_back(const T& c)
-    {
-        if (len_ < Capacity)
-        {
-            buf_[len_] = c;
-            ++len_;
-        }
-        else
-        {
-            assert(false);
-        }
-    }
-
-    [[nodiscard]] T&       front()       { return operator[](0); }
-    [[nodiscard]] const T& front() const { return operator[](0); }
-
-    [[nodiscard]]
-    T& back()
-    {
-        if (len_ > 0)
-        {
-            return buf_[len_ - 1U];
-        }
-        else
-        {
-            assert(false);
-            return buf_[0];
-        }
-    }
-    [[nodiscard]] const T& back() const { return const_cast<FixedCapacityVector*>(this)->back(); }
-
-    [[nodiscard]] T* begin() { return &buf_[0]; }
-    [[nodiscard]] T* end()   { return &buf_[len_]; }
-
-    [[nodiscard]] const T* begin() const { return &buf_[0]; }
-    [[nodiscard]] const T* end()   const { return &buf_[len_]; }
-
-    [[nodiscard]] T* data() { return &buf_; }
-    [[nodiscard]] const T* data() const { return &buf_; }
-
-    /*
-     * Operators
-     */
-    [[nodiscard]]
-    T& operator[](std::size_t index)
-    {
-        if (index < len_)
-        {
-            return buf_[index];
-        }
-        else
-        {
-            assert(false);
-            return back();
-        }
-    }
-    [[nodiscard]]
-    const T& operator[](std::size_t index) const
-    {
-        return const_cast<FixedCapacityVector*>(this)->operator[](index);
-    }
-
-    template <typename S, typename = decltype(std::declval<S>().begin())>
-    [[nodiscard]]
-    bool operator==(const S& s) const
-    {
-        return std::equal(begin(), end(), std::begin(s), std::end(s));
-    }
-
-    template <typename S>
-    [[nodiscard]]
-    bool operator!=(const S& s) const
-    {
-        return !operator==(s);
-    }
-};
-
-}   // namespace util
-
-/**
  * Data presentation layer.
  */
 namespace presentation
@@ -1380,7 +947,7 @@ public:
     }
 
     template <std::size_t Capacity>
-    void fetchASCIIString(util::FixedCapacityString<Capacity>& out_string)
+    void fetchASCIIString(senoval::String<Capacity>& out_string)
     {
         out_string.clear();
         for (std::size_t i = 0 ; (i < Capacity) && (input_ != end_); i++)
@@ -1509,8 +1076,7 @@ using StaticMessageBuffer = std::array<std::uint8_t, MessageSizeNotIncludingHead
  * Resizeable buffer type that can be used by variable-length message definitions.
  */
 template <std::size_t MaxMessageSizeNotIncludingHeader>
-using DynamicMessageBuffer = util::FixedCapacityVector<std::uint8_t,
-                                                       MaxMessageSizeNotIncludingHeader + MessageHeader::Size>;
+using DynamicMessageBuffer = senoval::Vector<std::uint8_t, MaxMessageSizeNotIncludingHeader + MessageHeader::Size>;
 
 /**
  * Node info message representation.
@@ -1564,7 +1130,7 @@ struct NodeInfoMessage
         Bootloader,
     };
 
-    using String = util::FixedCapacityString<80>;
+    using String = senoval::String<80>;
 
     /**
      * Message fields.
@@ -1578,7 +1144,7 @@ struct NodeInfoMessage
     String node_description;
     String build_environment_description;
     String runtime_environment_description;
-    util::FixedCapacityVector<std::uint8_t, 255> certificate_of_authenticity;
+    senoval::Vector<std::uint8_t, 255> certificate_of_authenticity;
 
     /**
      * True if the message is empty. An empty message is considered a request for node info.
@@ -1759,14 +1325,14 @@ struct NodeInfoMessage
  *  -----------------------------------------------------------------------------------------------
  *    <=94
  */
-struct RegisterName : public util::FixedCapacityString<93>
+struct RegisterName : public senoval::String<93>
 {
-    using Base = util::FixedCapacityString<93>;
+    using Base = senoval::String<93>;
 
     static constexpr std::size_t MinEncodedSize = 1;
     static constexpr std::size_t MaxEncodedSize = 94;
 
-    using Base::FixedCapacityString;    ///< All constructors are inherited
+    using Base::String;    ///< All constructors are inherited
     using Base::operator=;
 
     /**
@@ -1835,41 +1401,41 @@ namespace detail_
 struct RegisterValueTypes
 {
     /// No value; used to represent missing registers and requests for data
-    using Empty = std::monostate;                                                       ///< Type ID 0
+    using Empty = std::monostate;                                             ///< Type ID 0
 
     /// ASCII string, or UTF-8 encoded bytes
-    using String = util::FixedCapacityString<256>;                                      ///< Type ID 1
+    using String = senoval::String<256>;                                      ///< Type ID 1
 
     /// A wrapper is needed rather than alias to create a distinct type for std::variant
-    struct Unstructured : public util::FixedCapacityVector<std::uint8_t, 256>           ///< Type ID 2
+    struct Unstructured : public senoval::Vector<std::uint8_t, 256>           ///< Type ID 2
     {
-        using Base = util::FixedCapacityVector<std::uint8_t, 256>;
+        using Base = senoval::Vector<std::uint8_t, 256>;
         Unstructured() = default;
         Unstructured(std::size_t len, const std::uint8_t* ptr) : Base(ptr, ptr + len) {}
     };
 
     /// A wrapper is needed rather than alias to create a distinct type for std::variant
-    struct Boolean : public util::FixedCapacityVector<bool, 256>                        ///< Type ID 3
+    struct Boolean : public senoval::Vector<bool, 256>                        ///< Type ID 3
     {
-        using Base = util::FixedCapacityVector<bool, 256>;
-        using Base::FixedCapacityVector;
+        using Base = senoval::Vector<bool, 256>;
+        using Base::Vector;
     };
 
     /// Signed integers
-    using I64 = util::FixedCapacityVector<std::int64_t, 32>;                            ///< Type ID 4
-    using I32 = util::FixedCapacityVector<std::int32_t, 64>;                            ///< Type ID 5
-    using I16 = util::FixedCapacityVector<std::int16_t, 128>;                           ///< Type ID 6
-    using I8  = util::FixedCapacityVector<std::int8_t,  256>;                           ///< Type ID 7
+    using I64 = senoval::Vector<std::int64_t, 32>;                            ///< Type ID 4
+    using I32 = senoval::Vector<std::int32_t, 64>;                            ///< Type ID 5
+    using I16 = senoval::Vector<std::int16_t, 128>;                           ///< Type ID 6
+    using I8  = senoval::Vector<std::int8_t,  256>;                           ///< Type ID 7
 
     /// Unsigned integers
-    using U64 = util::FixedCapacityVector<std::uint64_t, 32>;                           ///< Type ID 8
-    using U32 = util::FixedCapacityVector<std::uint32_t, 64>;                           ///< Type ID 9
-    using U16 = util::FixedCapacityVector<std::uint16_t, 128>;                          ///< Type ID 10
-    using U8  = util::FixedCapacityVector<std::uint8_t,  256>;                          ///< Type ID 11
+    using U64 = senoval::Vector<std::uint64_t, 32>;                           ///< Type ID 8
+    using U32 = senoval::Vector<std::uint32_t, 64>;                           ///< Type ID 9
+    using U16 = senoval::Vector<std::uint16_t, 128>;                          ///< Type ID 10
+    using U8  = senoval::Vector<std::uint8_t,  256>;                          ///< Type ID 11
 
     /// IEEE754 floating point
-    using F64 = util::FixedCapacityVector<double, 32>;                                  ///< Type ID 12
-    using F32 = util::FixedCapacityVector<float,  64>;                                  ///< Type ID 13
+    using F64 = senoval::Vector<double, 32>;                                  ///< Type ID 12
+    using F32 = senoval::Vector<float,  64>;                                  ///< Type ID 13
 
     /**
      * All value types represented as a single algebraic type (tagged union).
@@ -2068,7 +1634,7 @@ private:
         /// Integer vector handler
         template <typename T, std::size_t Capacity>
         std::enable_if_t<std::is_integral_v<T>>
-        operator()(const util::FixedCapacityVector<T, Capacity>& vec) const
+        operator()(const senoval::Vector<T, Capacity>& vec) const
         {
             // The following construct cleverly avoids dependency on the native type sizes.
             static constexpr std::size_t EncodedItemSize = MaxEncodedValueSize / Capacity;
@@ -2088,7 +1654,7 @@ private:
         /// Float vector handler
         template <typename T, std::size_t Capacity>
         std::enable_if_t<std::is_floating_point_v<T>>
-        operator()(const util::FixedCapacityVector<T, Capacity>& vec) const
+        operator()(const senoval::Vector<T, Capacity>& vec) const
         {
             for (const T& x : vec)
             {
@@ -2116,7 +1682,7 @@ private:
 
     template <typename InputByteIterator, typename T, std::size_t Capacity>
     static void resizeVectorBeforeDecoding(presentation::StreamDecoder<InputByteIterator>& decoder,
-                                           util::FixedCapacityVector<T, Capacity>& vector)
+                                           senoval::Vector<T, Capacity>& vector)
     {
         // The following construct cleverly avoids dependency on the native type sizes.
         static constexpr std::size_t EncodedItemSize = MaxEncodedValueSize / Capacity;
@@ -2140,7 +1706,7 @@ private:
     template <typename InputByteIterator, typename T, std::size_t Capacity>
     static std::enable_if_t<std::is_integral_v<T>>
     decodeSpecificValue(presentation::StreamDecoder<InputByteIterator>& decoder,
-                        util::FixedCapacityVector<T, Capacity>& out_vector)
+                        senoval::Vector<T, Capacity>& out_vector)
     {
         // The following construct cleverly avoids dependency on the native type sizes.
         static constexpr std::size_t EncodedItemSize = MaxEncodedValueSize / Capacity;
@@ -2163,7 +1729,7 @@ private:
     template <typename InputByteIterator, typename T, std::size_t Capacity>
     static std::enable_if_t<std::is_floating_point_v<T>>
     decodeSpecificValue(presentation::StreamDecoder<InputByteIterator>& decoder,
-                        util::FixedCapacityVector<T, Capacity>& out_vector)
+                        senoval::Vector<T, Capacity>& out_vector)
     {
         resizeVectorBeforeDecoding(decoder, out_vector);
         for (auto& x : out_vector)

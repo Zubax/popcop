@@ -664,224 +664,9 @@ TEST_CASE("CRC")
 }
 
 
-TEST_CASE("FixedCapacityString")
-{
-    util::FixedCapacityString<10> s;
-    REQUIRE(s.empty());
-    REQUIRE(std::string(s.c_str()) == "");  // NOLINT
-    REQUIRE(s == "");  // NOLINT
-    REQUIRE(s != " ");
-    REQUIRE(s.capacity() == 10);
-    REQUIRE(s.max_size() == 10);
-    REQUIRE(s.length() == 0);
-    REQUIRE(s.size() == 0);  // NOLINT
-
-    s += "123";
-    REQUIRE(!s.empty());
-    REQUIRE(std::string(s.c_str()) == "123");
-    REQUIRE("123" == s);
-    REQUIRE(" " != s);
-
-    s += util::FixedCapacityString<10>("456");
-    REQUIRE(!s.empty());
-    REQUIRE(std::string(s.c_str()) == "123456");
-    REQUIRE(s == "123456");
-    REQUIRE(s != "123");
-    REQUIRE(s.capacity() == 10);
-    REQUIRE(s.max_size() == 10);
-    REQUIRE(s.length() == 6);
-    REQUIRE(s.size() == 6);
-
-    s += "7890a";
-    REQUIRE(!s.empty());
-    REQUIRE(std::string(s.c_str()) == "1234567890");
-    REQUIRE(s == "1234567890");
-    REQUIRE(s != "1234567890a");
-
-    s.clear();
-    REQUIRE(s.empty());
-    REQUIRE(std::string(s.c_str()) == "");  // NOLINT
-    REQUIRE(s == "");  // NOLINT
-
-    s = util::FixedCapacityString<30>("qwertyuiopasdfghjklzxcvbnm");
-    REQUIRE(std::string(s.c_str()) == "qwertyuiop");
-    REQUIRE(s == "qwertyuiop");
-
-    s = util::FixedCapacityString<30>("123");
-    s += 'a';
-    s += 'b';
-    s += 'c';
-    REQUIRE(std::string(s.c_str()) == "123abc");
-    REQUIRE(s == "123abc");
-    REQUIRE(s[0] == '1');
-    REQUIRE(s[1] == '2');
-    REQUIRE(s[2] == '3');
-    REQUIRE(s[3] == 'a');
-    REQUIRE(s[4] == 'b');
-    REQUIRE(s[5] == 'c');
-    REQUIRE(s.front() == '1');
-    REQUIRE(s.back() == 'c');
-    REQUIRE(*s.begin() == '1');
-    REQUIRE(*(s.end() - 1) == 'c');
-    REQUIRE(*s.end() == '\0');
-
-    s = util::FixedCapacityString<30>("hElLo/*-12");
-    REQUIRE(s.toLowerCase() == "hello/*-12");
-    REQUIRE("HELLO/*-12" == s.toUpperCase());
-
-    auto s2 = s + util::FixedCapacityString<10>(" World!");
-    REQUIRE(s2.capacity() == 20);
-    REQUIRE(s2.max_size() == 20);
-    REQUIRE(s2.size() == 17);
-    REQUIRE(s2.length() == 17);
-    REQUIRE(s2 == "hElLo/*-12 World!");
-
-    REQUIRE("[hElLo/*-12 World!]" == ("[" + s2 + "]"));
-
-    s2.resize(20, 'Z');
-    REQUIRE(s2 == "hElLo/*-12 World!ZZZ");
-    s2.resize(10);
-    REQUIRE(s2 == "hElLo/*-12");
-    s2.resize(0);
-    REQUIRE(s2.empty());
-}
-
-
-TEST_CASE("FixedCapacityVector")
-{
-    util::FixedCapacityVector<std::int32_t, 10> vec;
-
-    REQUIRE(sizeof(vec) == 40 + sizeof(std::size_t));
-    REQUIRE(vec.empty());
-    REQUIRE(vec.capacity() == 10);
-    REQUIRE(vec.max_size() == 10);
-    REQUIRE(vec.size() == 0);
-    REQUIRE(vec.begin() == vec.end());
-
-    vec.push_back(1);
-    REQUIRE(!vec.empty());
-    REQUIRE(vec.capacity() == 10);
-    REQUIRE(vec.max_size() == 10);
-    REQUIRE(vec.size() == 1);
-    REQUIRE(vec.begin() != vec.end());
-    REQUIRE(1 == *vec.begin());
-    REQUIRE(1 == *(vec.end() - 1));
-    REQUIRE(1 == vec.front());
-    REQUIRE(1 == vec.back());
-
-    vec.push_back(2);
-    REQUIRE(!vec.empty());
-    REQUIRE(vec.capacity() == 10);
-    REQUIRE(vec.max_size() == 10);
-    REQUIRE(vec.size() == 2);
-    REQUIRE(vec.begin() != vec.end());
-    REQUIRE(1 == *vec.begin());
-    REQUIRE(2 == *(vec.end() - 1));
-    REQUIRE(1 == vec.front());
-    REQUIRE(2 == vec.back());
-
-    vec.push_back(3);
-    vec.push_back(4);
-    vec.push_back(5);
-    vec.push_back(6);
-    vec.push_back(7);
-    vec.push_back(8);
-    vec.push_back(9);
-    vec.push_back(10);
-    REQUIRE(!vec.empty());
-    REQUIRE(vec.size() == 10);
-    REQUIRE(1 == *vec.begin());
-    REQUIRE(10 == *(vec.end() - 1));
-    REQUIRE(1 == vec.front());
-    REQUIRE(10 == vec.back());
-
-    const std::int8_t arr[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    const util::FixedCapacityVector<std::int8_t, 80> vec2(std::begin(arr), std::end(arr));
-    REQUIRE(sizeof(vec2) == 80 + sizeof(std::size_t));
-    REQUIRE(!vec2.empty());
-    REQUIRE(vec2.capacity() == 80);
-    REQUIRE(vec2.max_size() == 80);
-    REQUIRE(vec2.size() == 10);
-    REQUIRE(vec2.begin() != vec2.end());
-    REQUIRE(1 == *vec2.begin());
-    REQUIRE(10 == *(vec2.end() - 1));
-    REQUIRE(1 == vec2.front());
-    REQUIRE(10 == vec2.back());
-
-    REQUIRE(vec == vec2);
-    REQUIRE(vec2 == vec);
-    REQUIRE((vec != vec2) == false);
-    REQUIRE((vec2 != vec) == false);
-
-    vec[3] = -3;
-
-    REQUIRE(vec != vec2);
-    REQUIRE(vec2 != vec);
-    REQUIRE((vec == vec2) == false);
-    REQUIRE((vec2 == vec) == false);
-
-    const util::FixedCapacityVector<std::int32_t, 10> vec_copy = vec;
-    REQUIRE(!vec_copy.empty());
-    REQUIRE(vec_copy.capacity() == 10);
-    REQUIRE(vec_copy.max_size() == 10);
-    REQUIRE(vec_copy.size() == 10);
-    REQUIRE(vec_copy.begin() != vec_copy.end());
-
-    REQUIRE(vec_copy != vec2);
-    REQUIRE(vec2 != vec_copy);
-    REQUIRE(vec == vec_copy);
-    REQUIRE(vec_copy == vec);
-    REQUIRE((vec_copy == vec2) == false);
-    REQUIRE((vec2 == vec_copy) == false);
-    REQUIRE((vec != vec_copy) == false);
-    REQUIRE((vec_copy != vec) == false);
-
-    vec.clear();
-    REQUIRE(vec.empty());
-    REQUIRE(vec.capacity() == 10);
-    REQUIRE(vec.max_size() == 10);
-    REQUIRE(vec.size() == 0);
-    REQUIRE(vec.begin() == vec.end());
-
-    REQUIRE(vec != vec2);
-    REQUIRE(vec2 != vec);
-    REQUIRE(vec != vec_copy);
-    REQUIRE(vec_copy != vec);
-    REQUIRE((vec == vec2) == false);
-    REQUIRE((vec2 == vec) == false);
-    REQUIRE((vec == vec_copy) == false);
-    REQUIRE((vec_copy == vec) == false);
-
-    {
-        util::FixedCapacityVector<std::int32_t, 6> vec3(5, 123);
-        REQUIRE(!vec3.empty());
-        REQUIRE(vec3.capacity() == 6);
-        REQUIRE(vec3.max_size() == 6);
-        REQUIRE(vec3.size() == 5);
-        REQUIRE(vec3[0] == 123);
-        REQUIRE(vec3[1] == 123);
-        REQUIRE(vec3[2] == 123);
-        REQUIRE(vec3[3] == 123);
-        REQUIRE(vec3[4] == 123);
-    }
-
-    {
-        util::FixedCapacityVector<std::int8_t, 7> vec4({1, 2, 3, 4});
-        REQUIRE(!vec4.empty());
-        REQUIRE(vec4.capacity() == 7);
-        REQUIRE(vec4.max_size() == 7);
-        REQUIRE(vec4.size() == 4);
-        REQUIRE(vec4[0] == 1);
-        REQUIRE(vec4[1] == 2);
-        REQUIRE(vec4[2] == 3);
-        REQUIRE(vec4[3] == 4);
-    }
-}
-
-
 TEST_CASE("StreamEncoder")
 {
-    util::FixedCapacityVector<std::uint8_t, 100> vec;
+    senoval::Vector<std::uint8_t, 100> vec;
     presentation::StreamEncoder encoder(std::back_inserter(vec));
 
     REQUIRE(encoder.getOffset() == 0);
@@ -972,7 +757,7 @@ TEST_CASE("StreamDecoder-slow")
 {
     constexpr auto BufferSize = 400'000'000;    ///< This might be too much for some systems?
 
-    auto vec = std::make_shared<util::FixedCapacityVector<std::uint8_t, BufferSize>>();
+    auto vec = std::make_shared<senoval::Vector<std::uint8_t, BufferSize>>();
     presentation::StreamEncoder encoder(std::back_inserter(*vec));
     presentation::StreamDecoder decoder(vec->begin(),
                                         vec->begin() + vec->capacity());
@@ -1077,7 +862,7 @@ TEST_CASE("StreamDecoder-slow")
             const auto depth = getRandomByte();
             const auto fill = getRandomByte();
             encoder.fillUpToOffset(encoder.getOffset() + depth, fill);
-            util::FixedCapacityVector<std::uint8_t, 255> out;
+            senoval::Vector<std::uint8_t, 255> out;
             if (getRandomBit())
             {
                 decoder.fetchBytes(std::back_inserter(out), depth);
@@ -1105,7 +890,7 @@ TEST_CASE("StreamDecoder-slow")
         }
         case 12:
         {
-            util::FixedCapacityString<65535> str;
+            senoval::String<65535> str;
             const std::uint16_t str_length = getRandomNumber<2, false, false>();
             for (unsigned i = 0; i < str_length; i++)
             {
@@ -1119,7 +904,7 @@ TEST_CASE("StreamDecoder-slow")
             {
                 encoder.addI8(0);                   // ...which is by design.
             }
-            util::FixedCapacityString<65535> out = "Some garbage";
+            senoval::String<65535> out = "Some garbage";
             decoder.fetchASCIIString(out);
             REQUIRE(out == str);
             REQUIRE(decoder.getOffset() == encoder.getOffset());
@@ -1542,7 +1327,7 @@ TEST_CASE("RegisterDataDecoding")
 
 
 template <std::size_t Capacity>
-static inline void fillRandomString(util::FixedCapacityString<Capacity>& out_string)
+static inline void fillRandomString(senoval::String<Capacity>& out_string)
 {
     out_string.clear();
     std::size_t size = (std::size_t(getRandomByte()) * std::size_t(getRandomByte())) % Capacity;
@@ -1554,7 +1339,7 @@ static inline void fillRandomString(util::FixedCapacityString<Capacity>& out_str
 
 
 template <typename T, std::size_t Capacity>
-static void fillRandomVector(util::FixedCapacityVector<T, Capacity>& out_vector)
+static void fillRandomVector(senoval::Vector<T, Capacity>& out_vector)
 {
     out_vector.clear();
     std::size_t size = (std::size_t(getRandomByte()) * std::size_t(getRandomByte())) % Capacity;
@@ -1615,7 +1400,7 @@ static T makeRandomRegisterData()
 struct ValuePrinter
 {
     template <typename T, std::size_t Capacity>
-    void operator()(const util::FixedCapacityVector<T, Capacity>& vector) const
+    void operator()(const senoval::Vector<T, Capacity>& vector) const
     {
         std::cout << "Vector of "
                   << (std::is_same_v<T, bool> ? "bool" :
@@ -1637,7 +1422,7 @@ struct ValuePrinter
     }
 
     template <std::size_t Capacity>
-    void operator()(const util::FixedCapacityString<Capacity>& string) const
+    void operator()(const senoval::String<Capacity>& string) const
     {
         std::cout << "String: " << string.c_str() << std::endl;
     }
