@@ -1569,6 +1569,11 @@ struct RegisterValue : public detail_::RegisterValueTypes::Variant,
     {
         return std::visit(std::forward<Visitor>(vis), *static_cast<const Variant*>(this));
     }
+    template <typename Visitor>
+    auto visit(Visitor&& vis)
+    {
+        return std::visit(std::forward<Visitor>(vis), *static_cast<Variant*>(this));
+    }
 
     /**
      * Serializes the object into the provided encoder.
