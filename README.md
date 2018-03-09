@@ -7,6 +7,18 @@ This is PoPCoP - a simple Point-to-Point Control Protocol.
 
 The documentation is missing. Come back later.
 
+## Languages
+
+### C++
+
+The C++17 implementation is designed for real-time resource-constrained embedded systems.
+It needs one third-party dependency - the [Senoval](https://github.com/Zubax/senoval) header-only library.
+
+### Python
+
+The Python 3.5 implementation is dependency-free.
+It can make use of PySerial, if available, to provide the optional serial port transport.
+
 ## Transport layer
 
 Popcop is modeled after the [HDLC protocol](https://en.wikipedia.org/wiki/High-Level_Data_Link_Control).
