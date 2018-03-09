@@ -379,7 +379,7 @@ def _decode_name(encoded: bytes) -> typing.Tuple[str, bytes]:
 
 
 # Is this a new hit in unit testing or what?
-assert _decode_name(b'\x00') == ('', b'')
+assert _decode_name(b'\x00')     == ('', b'')
 assert _decode_name(b'\x011234') == ('1', b'234')
 assert _decode_name(b'\x031234') == ('123', b'4')
 assert _decode_name(b'\x041234') == ('1234', b'')
@@ -451,16 +451,16 @@ def _encode_value(type_id: ValueType, value: _VALUE_TYPE_ANNOTATION) -> bytearra
     return out
 
 
-assert _encode_value(ValueType.EMPTY, None) == b'\x00'
-assert _encode_value(ValueType.EMPTY, '123') == b'\x00'
-assert _encode_value(ValueType.STRING, '') == b'\x01'
-assert _encode_value(ValueType.STRING, '123') == b'\x01123'
-assert _encode_value(ValueType.UNSTRUCTURED, b'') == b'\x02'
-assert _encode_value(ValueType.UNSTRUCTURED, b'123') == b'\x02123'
-assert _encode_value(ValueType.BOOLEAN, []) == b'\x03'
-assert _encode_value(ValueType.BOOLEAN, [0, 1, 2, 3]) == bytes([3, 0, 1, 1, 1])
-assert _encode_value(ValueType.I64, []) == bytes([4])
-assert _encode_value(ValueType.U16, 0x1234) == bytes([10, 0x34, 0x12])
+assert _encode_value(ValueType.EMPTY, None)                  == b'\x00'
+assert _encode_value(ValueType.EMPTY, '123')                 == b'\x00'
+assert _encode_value(ValueType.STRING, '')                   == b'\x01'
+assert _encode_value(ValueType.STRING, '123')                == b'\x01123'
+assert _encode_value(ValueType.UNSTRUCTURED, b'')            == b'\x02'
+assert _encode_value(ValueType.UNSTRUCTURED, b'123')         == b'\x02123'
+assert _encode_value(ValueType.BOOLEAN, [])                  == b'\x03'
+assert _encode_value(ValueType.BOOLEAN, [0, 1, 2, 3])        == bytes([3, 0, 1, 1, 1])
+assert _encode_value(ValueType.I64, [])                      == bytes([4])
+assert _encode_value(ValueType.U16, 0x1234)                  == bytes([10, 0x34, 0x12])
 assert _encode_value(ValueType.U8, [0x12, 0x34, 0x56, 0x78]) == bytes([11, 0x12, 0x34, 0x56, 0x78])
 
 
@@ -500,13 +500,13 @@ def _decode_value(encoded: bytes) -> typing.Tuple[ValueType, _VALUE_TYPE_ANNOTAT
     return type_id, value
 
 
-assert _decode_value(b'\x00123456') == (ValueType.EMPTY, None)
-assert _decode_value(b'\x01123456') == (ValueType.STRING, '123456')
-assert _decode_value(b'\x02123456') == (ValueType.UNSTRUCTURED, b'123456')
-assert _decode_value(b'\x01') == (ValueType.STRING, '')
-assert _decode_value(b'\x02') == (ValueType.UNSTRUCTURED, b'')
-assert _decode_value(bytes([3])) == (ValueType.BOOLEAN, [])
-assert _decode_value(bytes([3, 0, 1, 2, 3])) == (ValueType.BOOLEAN, [False, True, True, True])
-assert _decode_value(bytes([4])) == (ValueType.I64, [])
-assert _decode_value(bytes([10, 0x12, 0x34])) == (ValueType.U16, [0x3412])
-assert _decode_value(bytes([10, 0x12, 0x34, 0x56, 0x78])) == (ValueType.U16, [0x3412, 0x7856])
+assert _decode_value(b'\x00123456')                       == (ValueType.EMPTY,        None)
+assert _decode_value(b'\x01123456')                       == (ValueType.STRING,       '123456')
+assert _decode_value(b'\x02123456')                       == (ValueType.UNSTRUCTURED, b'123456')
+assert _decode_value(b'\x01')                             == (ValueType.STRING,       '')
+assert _decode_value(b'\x02')                             == (ValueType.UNSTRUCTURED, b'')
+assert _decode_value(bytes([3]))                          == (ValueType.BOOLEAN,      [])
+assert _decode_value(bytes([3, 0, 1, 2, 3]))              == (ValueType.BOOLEAN,      [False, True, True, True])
+assert _decode_value(bytes([4]))                          == (ValueType.I64,          [])
+assert _decode_value(bytes([10, 0x12, 0x34]))             == (ValueType.U16,          [0x3412])
+assert _decode_value(bytes([10, 0x12, 0x34, 0x56, 0x78])) == (ValueType.U16,          [0x3412, 0x7856])
