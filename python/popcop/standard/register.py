@@ -108,6 +108,26 @@ VALUE_TYPE_TO_KIND = {
 }
 
 
+try:
+    import numpy
+    SCALAR_VALUE_TYPE_TO_NUMPY_TYPE = {
+        ValueType.BOOLEAN:  numpy.bool_,
+        ValueType.I64:      numpy.int64,
+        ValueType.I32:      numpy.int32,
+        ValueType.I16:      numpy.int16,
+        ValueType.I8:       numpy.int8,
+        ValueType.U64:      numpy.uint64,
+        ValueType.U32:      numpy.uint32,
+        ValueType.U16:      numpy.uint16,
+        ValueType.U8:       numpy.uint8,
+        ValueType.F64:      numpy.float64,
+        ValueType.F32:      numpy.float32,
+    }
+except ImportError:
+    numpy = None
+    SCALAR_VALUE_TYPE_TO_NUMPY_TYPE = None
+
+
 _VALUE_TYPE_TO_STRUCT_FORMAT = {
     ValueType.EMPTY:        ' ',
     ValueType.STRING:       's',
