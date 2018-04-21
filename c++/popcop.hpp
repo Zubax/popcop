@@ -1019,6 +1019,15 @@ enum class MessageID : std::uint16_t
     RegisterDataResponse            = 2,
     RegisterDiscoveryRequest        = 3,
     RegisterDiscoveryResponse       = 4,
+    RegisterTraceSetupRequest       = 5,
+    RegisterTraceSetupResponse      = 6,
+    RegisterTraceEvent              = 7,
+    DeviceManagementCommandRequest  = 8,
+    DeviceManagementCommandResponse = 9,
+    BootloaderStatusRequest         = 10,
+    BootloaderStatusResponse        = 11,
+    BootloaderImageDataRequest      = 12,
+    BootloaderImageDataResponse     = 13,
 };
 
 /**
@@ -2121,6 +2130,520 @@ struct RegisterDiscoveryResponseMessage
 
         return msg;
     }
+};
+
+/**
+ * Standard generic device command set.
+ * Commands should be idempotent whenever possible.
+ * More can be added in the future.
+ */
+enum class DeviceManagementCommand : std::uint16_t
+{
+    Restart                     = 0,
+    PowerOff                    = 1,
+    LaunchBootloader            = 2,
+    FactoryReset                = 3,
+    PrintDiagnosticsBrief       = 4,
+    PrintDiagnosticsVerbose     = 5,
+};
+
+/**
+ * Generic device command message.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u16             command         Generic command code
+ *  -----------------------------------------------------------------------------------------------
+ *      2
+ */
+struct DeviceManagementCommandRequestMessage
+{
+    static constexpr std::size_t EncodedSize = 2;
+
+    static constexpr MessageID ID = MessageID::DeviceManagementCommandRequest;
+
+    /**
+     * All fields of this message type.
+     */
+    DeviceManagementCommand command{};
+
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
+     */
+    template <typename OutputIterator>
+    std::size_t encode(OutputIterator begin) const
+    {
+        presentation::StreamEncoder encoder(begin);
+        MessageHeader(ID).encode(encoder);
+        encoder.addU16(std::uint16_t(command));
+        assert(encoder.getOffset() == (EncodedSize + MessageHeader::Size));
+        return encoder.getOffset();
+    }
+
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    StaticMessageBuffer<EncodedSize> encode() const
+    {
+        StaticMessageBuffer<EncodedSize> buf;
+        const std::size_t size = encode(buf.begin());
+        (void) size;
+        assert(size == buf.size());
+        return buf;
+    }
+
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     */
+    template <typename InputIterator>
+    static std::optional<DeviceManagementCommandRequestMessage> tryDecode(InputIterator begin, InputIterator end)
+    {
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
+        if (!header || (header->message_id != ID))
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() != EncodedSize)
+        {
+            return {};
+        }
+
+        DeviceManagementCommandRequestMessage msg;
+        msg.command = DeviceManagementCommand(decoder.fetchU16());
+
+        return msg;
+    }
+};
+
+/**
+ * Generic device command response message.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u16             command         Generic command code copied from the request.
+ *      2       u8              status          Command execution status.
+ *  -----------------------------------------------------------------------------------------------
+ *      3
+ */
+struct DeviceManagementCommandResponseMessage
+{
+    static constexpr std::size_t EncodedSize = 3;
+
+    static constexpr MessageID ID = MessageID::DeviceManagementCommandResponse;
+
+    /**
+     * Command execution result.
+     */
+    enum class Status : std::uint8_t
+    {
+        Ok                  = 0,
+        BadCommand          = 1,
+        MaybeLater          = 2,
+    };
+
+    /**
+     * All fields of this message type.
+     */
+    DeviceManagementCommand command{};
+    Status status{};
+
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
+     */
+    template <typename OutputIterator>
+    std::size_t encode(OutputIterator begin) const
+    {
+        presentation::StreamEncoder encoder(begin);
+        MessageHeader(ID).encode(encoder);
+        encoder.addU16(std::uint16_t(command));
+        encoder.addU8(std::uint8_t(status));
+        assert(encoder.getOffset() == (EncodedSize + MessageHeader::Size));
+        return encoder.getOffset();
+    }
+
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    StaticMessageBuffer<EncodedSize> encode() const
+    {
+        StaticMessageBuffer<EncodedSize> buf;
+        const std::size_t size = encode(buf.begin());
+        (void) size;
+        assert(size == buf.size());
+        return buf;
+    }
+
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     */
+    template <typename InputIterator>
+    static std::optional<DeviceManagementCommandResponseMessage> tryDecode(InputIterator begin, InputIterator end)
+    {
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
+        if (!header || (header->message_id != ID))
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() != EncodedSize)
+        {
+            return {};
+        }
+
+        DeviceManagementCommandResponseMessage msg;
+        msg.command = DeviceManagementCommand(decoder.fetchU16());
+        msg.status  = Status(decoder.fetchU8());
+
+        return msg;
+    }
+};
+
+/**
+ * All possible states of the generic bootloader API. See the following state machine diagram.
+ *
+ *
+ *     No valid application found ###################### Valid application found
+ *               /----------------# Bootloader started #----------\ /-------------------------------------------\
+ *               |                ######################          | |                                           |
+ *               v                                                v v  Boot delay expired                       |
+ *         +-------------+                               +-----------+  (typically zero)  +-------------+       |
+ *     /-->| NoAppToBoot |        /----------------------| BootDelay |------------------->| ReadyToBoot |       |
+ *     |   +-------------+       /                       +-----------+                    +-------------+       |
+ *     |          |             /                          |Boot cancelled                   |ReadyToBoot is    |
+ *     |Upgrade   |<-----------/                           |e.g. received a state transition |an auxiliary      /
+ *     |failed,   |Upgrade requested,                      |request to BootCancelled.        |state, it is     /
+ *     |no valid  |e.g. received a state transition        v                                 |left automati-  /
+ *     |image is  |request to AppUpgradeInProgress. +---------------+                        |cally ASAP.    /
+ *     |now ava-  |<--------------------------------| BootCancelled |                        v              /
+ *     |ilable    |                                 +---------------+                ###############       /
+ *     |          v                                        ^                         # Booting the #      /
+ *     | +----------------------+ Upgrade failed, but the  |                         # application #     /
+ *     \-| AppUpgradeInProgress |--------------------------/                         ###############    /
+ *       +----------------------+ existing valid image was not                                         /
+ *                |               altered and remains valid.                                          /
+ *                |                                                                                  /
+ *                | Upgrade successful, received image is valid.                                    /
+ *                \--------------------------------------------------------------------------------/
+ */
+enum class BootloaderState : std::uint8_t
+{
+    NoAppToBoot             = 0,
+    BootDelay               = 1,
+    BootCancelled           = 2,
+    AppUpgradeInProgress    = 3,
+    ReadyToBoot             = 4,
+};
+
+/**
+ * The bootloader protocol supports several types of images that can be written.
+ * Not all of them must be supported by the target.
+ */
+enum class BootloaderImageType : std::uint8_t
+{
+    Application                 = 0,
+    CertificateOfAuthenticity   = 1,
+};
+
+/**
+ * Bootloader status request; contains the desired status, the response will contain the actual new status.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u8              desired_state   Which state the bootloader should transition to.
+ *  -----------------------------------------------------------------------------------------------
+ *      1
+ */
+struct BootloaderStatusRequestMessage
+{
+    static constexpr std::size_t EncodedSize = 1;
+
+    static constexpr MessageID ID = MessageID::BootloaderStatusRequest;
+
+    /**
+     * Only the following states can be commanded:
+     *      NoAppToBoot             - erases the application
+     *      AppUpgradeInProgress    - initiates the upgrade process
+     *      ReadyToBoot             - commands to launch the application (if present)
+     * All other states cannot be used here.
+     */
+    BootloaderState desired_state{};
+
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
+     */
+    template <typename OutputIterator>
+    std::size_t encode(OutputIterator begin) const
+    {
+        presentation::StreamEncoder encoder(begin);
+        MessageHeader(ID).encode(encoder);
+        encoder.addU8(std::uint8_t(desired_state));
+        assert(encoder.getOffset() == (EncodedSize + MessageHeader::Size));
+        return encoder.getOffset();
+    }
+
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    StaticMessageBuffer<EncodedSize> encode() const
+    {
+        StaticMessageBuffer<EncodedSize> buf;
+        const std::size_t size = encode(buf.begin());
+        (void) size;
+        assert(size == buf.size());
+        return buf;
+    }
+
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     */
+    template <typename InputIterator>
+    static std::optional<BootloaderStatusRequestMessage> tryDecode(InputIterator begin, InputIterator end)
+    {
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
+        if (!header || (header->message_id != ID))
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() != EncodedSize)
+        {
+            return {};
+        }
+
+        BootloaderStatusRequestMessage msg;
+        msg.desired_state  = BootloaderState(decoder.fetchU8());
+
+        return msg;
+    }
+};
+
+/**
+ * Bootloader status response; contains the current status and stuff.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u64             uptime_ns       Bootloader's uptime in nanoseconds.
+ *      8       u64             flags           Reserved.
+ *      16      u8              state           The current state of the bootloader's standard state machine.
+ *  -----------------------------------------------------------------------------------------------
+ *      17
+ */
+struct BootloaderStatusResponseMessage
+{
+    static constexpr std::size_t EncodedSize = 17;
+
+    static constexpr MessageID ID = MessageID::BootloaderStatusResponse;
+
+    /**
+     * All fields of this message type.
+     */
+    Timestamp timestamp{};
+    std::uint64_t flags = 0;
+    BootloaderState state{};
+
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
+     */
+    template <typename OutputIterator>
+    std::size_t encode(OutputIterator begin) const
+    {
+        presentation::StreamEncoder encoder(begin);
+        MessageHeader(ID).encode(encoder);
+        encoder.addU64(timestamp.count());
+        encoder.addU64(flags);
+        encoder.addU8(std::uint8_t(state));
+        assert(encoder.getOffset() == (EncodedSize + MessageHeader::Size));
+        return encoder.getOffset();
+    }
+
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    StaticMessageBuffer<EncodedSize> encode() const
+    {
+        StaticMessageBuffer<EncodedSize> buf;
+        const std::size_t size = encode(buf.begin());
+        (void) size;
+        assert(size == buf.size());
+        return buf;
+    }
+
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     */
+    template <typename InputIterator>
+    static std::optional<BootloaderStatusResponseMessage> tryDecode(InputIterator begin, InputIterator end)
+    {
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
+        if (!header || (header->message_id != ID))
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() != EncodedSize)
+        {
+            return {};
+        }
+
+        BootloaderStatusResponseMessage msg;
+        msg.timestamp = Timestamp(decoder.fetchU64());
+        msg.flags = decoder.fetchU64();
+        msg.state  = BootloaderState(decoder.fetchU8());
+
+        return msg;
+    }
+};
+
+/// Implementation details; do not use that in user code
+namespace detail_
+{
+/**
+ * Base type for request/response messages.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u64             image_offset    Offset from the beginning of the image. Must grow sequentially.
+ *      1       u8              image_type      Kind of image contained in the message:
+ *                                                  0 - application
+ *                                                  1 - certificate of authenticity
+ *      9       u8[<=256]       image_data      Image data at the specified offset. All messages except the last
+ *                                              one are required to contain exactly 256 bytes of image data.
+ *                                              The last message is required to contain less than 256 bytes of
+ *                                              image data, possibly zero if the image size is 256-byte aligned.
+ *                                              Terminated at the end of the message (implicit length).
+ *  -----------------------------------------------------------------------------------------------
+ *      265
+ */
+template <typename Derived>
+struct BootloaderImageDataMessageBase
+{
+    static constexpr std::size_t MinEncodedSize = 9;
+    static constexpr std::size_t MaxEncodedSize = 265;
+
+    /**
+     * All fields of this message type.
+     */
+     std::uint64_t image_offset = 0;
+     BootloaderImageType image_type{};
+     senoval::Vector<std::uint8_t, 256> image_data;
+
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
+     */
+    template <typename OutputIterator>
+    std::size_t encode(OutputIterator begin) const
+    {
+        presentation::StreamEncoder encoder(begin);
+        MessageHeader(Derived::ID).encode(encoder);
+        encoder.addU64(image_offset);
+        encoder.addU8(std::uint8_t(image_type));
+        encoder.addBytes(image_data);
+        assert(encoder.getOffset() <= (MaxEncodedSize + MessageHeader::Size));
+        assert(encoder.getOffset() >= (MinEncodedSize + MessageHeader::Size));
+        return encoder.getOffset();
+    }
+
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    DynamicMessageBuffer<MaxEncodedSize> encode() const
+    {
+        DynamicMessageBuffer<MaxEncodedSize> buf;
+        const std::size_t size = encode(std::back_inserter(buf));
+        (void) size;
+        assert(size == buf.size());
+        return buf;
+    }
+
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     */
+    template <typename InputIterator>
+    static std::optional<Derived> tryDecode(InputIterator begin, InputIterator end)
+    {
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
+        if (!header || (header->message_id != Derived::ID))
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() < MinEncodedSize)
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() > MaxEncodedSize)
+        {
+            return {};
+        }
+
+        Derived msg;
+        msg.image_offset = decoder.fetchU64();
+        msg.image_type = BootloaderImageType(decoder.fetchU8());
+        decoder.fetchBytes(std::back_inserter(msg.image_data),
+                           decoder.getRemainingLength());
+        return msg;
+    }
+};
+
+} // namespace detail_
+
+/**
+ * This message is used to write new application images via the bootloader.
+ * It can also be utilized to read data back, but this is not considered useful at the moment.
+ */
+struct BootloaderImageDataRequestMessage :
+    public detail_::BootloaderImageDataMessageBase<BootloaderImageDataRequestMessage>
+{
+    static constexpr MessageID ID = MessageID::BootloaderImageDataRequest;
+};
+
+/**
+ * The counterpart for the request message.
+ * The response always contains the actual data from the memory.
+ * The host compares the written data with the response and determines whether the write was successful.
+ * All fields except image_data must have the same values as in the request.
+ */
+struct BootloaderImageDataResponseMessage :
+    public detail_::BootloaderImageDataMessageBase<BootloaderImageDataResponseMessage>
+{
+    static constexpr MessageID ID = MessageID::BootloaderImageDataResponse;
 };
 
 } // namespace standard

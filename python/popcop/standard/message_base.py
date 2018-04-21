@@ -26,6 +26,9 @@
 from .string_representable import StringRepresentable
 
 
+NANOSECONDS_PER_SECOND = 1000000000
+
+
 class MessageBase(StringRepresentable):
     MESSAGE_ID = None
 

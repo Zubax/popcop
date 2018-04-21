@@ -1858,3 +1858,189 @@ TEST_CASE("RegisterDiscoveryResponseMessage")
     REQUIRE(decode(msg.encode())->name[0] == 'Z');
     REQUIRE(decode(msg.encode())->name[92] == 'Z');
 }
+
+
+TEST_CASE("DeviceManagementCommandRequestMessage")
+{
+    using standard::MessageID;
+    using standard::DeviceManagementCommandRequestMessage;
+    using standard::DeviceManagementCommand;
+
+    const auto decode = [](const auto& container)
+    {
+        return DeviceManagementCommandRequestMessage::tryDecode(container.begin(), container.end());
+    };
+
+    DeviceManagementCommandRequestMessage msg;
+    REQUIRE(msg.command == DeviceManagementCommand::Restart);
+
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::DeviceManagementCommandRequest), 0,
+                                      0, 0));
+    REQUIRE(decode(msg.encode())->command == DeviceManagementCommand::Restart);
+
+    msg.command = DeviceManagementCommand::FactoryReset;
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::DeviceManagementCommandRequest), 0,
+                                      3, 0));
+    REQUIRE(decode(msg.encode())->command == DeviceManagementCommand::FactoryReset);
+}
+
+
+TEST_CASE("DeviceManagementCommandResponseMessage")
+{
+    using standard::MessageID;
+    using standard::DeviceManagementCommandResponseMessage;
+    using standard::DeviceManagementCommand;
+
+    const auto decode = [](const auto& container)
+    {
+        return DeviceManagementCommandResponseMessage::tryDecode(container.begin(), container.end());
+    };
+
+    DeviceManagementCommandResponseMessage msg;
+    REQUIRE(msg.command == DeviceManagementCommand::Restart);
+
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::DeviceManagementCommandResponse), 0,
+                                      0, 0, 0));
+    REQUIRE(decode(msg.encode())->command == DeviceManagementCommand::Restart);
+    REQUIRE(decode(msg.encode())->status == DeviceManagementCommandResponseMessage::Status::Ok);
+
+    msg.command = DeviceManagementCommand::FactoryReset;
+    msg.status = DeviceManagementCommandResponseMessage::Status::MaybeLater;
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::DeviceManagementCommandResponse), 0,
+                                      3, 0, 2));
+    REQUIRE(decode(msg.encode())->command == DeviceManagementCommand::FactoryReset);
+    REQUIRE(decode(msg.encode())->status == DeviceManagementCommandResponseMessage::Status::MaybeLater);
+}
+
+
+TEST_CASE("BootloaderStatusRequestMessage")
+{
+    using standard::MessageID;
+    using standard::BootloaderStatusRequestMessage;
+    using standard::BootloaderState;
+
+    const auto decode = [](const auto& container)
+    {
+        return BootloaderStatusRequestMessage::tryDecode(container.begin(), container.end());
+    };
+
+    BootloaderStatusRequestMessage msg;
+    REQUIRE(msg.desired_state == BootloaderState::NoAppToBoot);
+
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::BootloaderStatusRequest), 0,
+                                      0));
+    REQUIRE(decode(msg.encode())->desired_state == BootloaderState::NoAppToBoot);
+
+    msg.desired_state = BootloaderState::BootCancelled;
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::BootloaderStatusRequest), 0,
+                                      2));
+    REQUIRE(decode(msg.encode())->desired_state == BootloaderState::BootCancelled);
+}
+
+
+TEST_CASE("BootloaderStatusResponseMessage")
+{
+    using standard::MessageID;
+    using standard::BootloaderStatusResponseMessage;
+    using standard::BootloaderState;
+
+    const auto decode = [](const auto& container)
+    {
+        return BootloaderStatusResponseMessage::tryDecode(container.begin(), container.end());
+    };
+
+    BootloaderStatusResponseMessage msg;
+    REQUIRE(msg.timestamp.count() == 0);
+    REQUIRE(msg.flags == 0);
+    REQUIRE(msg.state == BootloaderState::NoAppToBoot);
+
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::BootloaderStatusResponse), 0,
+                                      0, 0, 0, 0, 0, 0, 0, 0,
+                                      0, 0, 0, 0, 0, 0, 0, 0,
+                                      0));
+    REQUIRE(decode(msg.encode())->timestamp.count() == 0);
+    REQUIRE(decode(msg.encode())->flags == 0);
+    REQUIRE(decode(msg.encode())->state == BootloaderState::NoAppToBoot);
+
+    msg.timestamp = standard::Timestamp(123456);
+    msg.flags = 0xBADC0FFEEUL;
+    msg.state = BootloaderState::BootCancelled;
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::BootloaderStatusResponse), 0,
+                                      0x40, 0xe2, 1, 0, 0, 0, 0, 0,
+                                      0xEE, 0xFF, 0xC0, 0xAD, 0x0B, 0, 0, 0,
+                                      2));
+    REQUIRE(decode(msg.encode())->timestamp.count() == 123456);
+    REQUIRE(decode(msg.encode())->flags == 0xBADC0FFEEUL);
+    REQUIRE(decode(msg.encode())->state == BootloaderState::BootCancelled);
+}
+
+
+template <typename T>
+void bootloaderImageDataTest()
+{
+    using standard::MessageID;
+    using standard::detail_::BootloaderImageDataMessageBase;
+    using standard::BootloaderImageType;
+
+    const auto decode = [](const auto& container)
+    {
+        return T::tryDecode(container.begin(), container.end());
+    };
+
+    T msg;
+    REQUIRE(msg.image_offset == 0);
+    REQUIRE(msg.image_type == BootloaderImageType::Application);
+    REQUIRE(msg.image_data.empty());
+
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(T::ID), 0,
+                                      0, 0, 0, 0, 0, 0, 0, 0,
+                                      0));
+    REQUIRE(decode(msg.encode())->image_offset == 0);
+    REQUIRE(decode(msg.encode())->image_type == BootloaderImageType::Application);
+    REQUIRE(decode(msg.encode())->image_data.empty());
+
+    msg.image_offset = 123456;
+    msg.image_type = BootloaderImageType::CertificateOfAuthenticity;
+    for (std::uint16_t i = 0; i < 256; i++)
+    {
+        msg.image_data.push_back(std::uint8_t(i & 0xFF));
+    }
+
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(T::ID), 0,
+                                      0x40, 0xE2, 1, 0, 0, 0, 0, 0,
+                                      1,
+                                      // 256 bytes of image payload
+                                      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                                      16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+                                      32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+                                      48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+                                      64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+                                      80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
+                                      96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111,
+                                      112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127,
+                                      128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143,
+                                      144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159,
+                                      160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175,
+                                      176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191,
+                                      192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207,
+                                      208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223,
+                                      224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239,
+                                      240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255));
+    REQUIRE(decode(msg.encode())->image_offset == 123456);
+    REQUIRE(decode(msg.encode())->image_type == BootloaderImageType::CertificateOfAuthenticity);
+    REQUIRE(decode(msg.encode())->image_data.size() == 256);
+    REQUIRE(decode(msg.encode())->image_data[0] == 0);
+    REQUIRE(decode(msg.encode())->image_data[128] == 128);
+    REQUIRE(decode(msg.encode())->image_data[255] == 255);
+    for (std::uint16_t i = 0; i < 256; i++)
+    {
+        REQUIRE(msg.image_data[i] == std::uint8_t(i & 0xFF));
+    }
+}
+
+
+TEST_CASE("BootloaderImageData")
+{
+    bootloaderImageDataTest<standard::BootloaderImageDataRequestMessage>();
+    bootloaderImageDataTest<standard::BootloaderImageDataResponseMessage>();
+}

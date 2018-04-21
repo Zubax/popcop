@@ -379,6 +379,123 @@ class TestStandardMessages(unittest.TestCase):
         self.assertEqual(msg.name, 'Hello')
         print(msg)
 
+    def test_device_management_command_request(self):
+        from popcop.transport import ReceivedFrame
+        from popcop.standard import encode, decode
+        from popcop.standard.device_management import CommandRequestMessage, Command
+        from popcop import STANDARD_FRAME_TYPE_CODE
+
+        # Encoding a full frame then stripping the delimiters, type code, and CRC.
+        self.assertEqual(encode(CommandRequestMessage(Command.LAUNCH_BOOTLOADER))[1:-6],         bytes([8, 0, 2, 0]))
+        self.assertEqual(encode(CommandRequestMessage(Command.PRINT_DIAGNOSTICS_VERBOSE))[1:-6], bytes([8, 0, 5, 0]))
+
+        msg = decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE, bytes([8, 0, 1, 0]), 0))
+        self.assertIsInstance(msg, CommandRequestMessage)
+        self.assertEqual(msg.command, Command.POWER_OFF)
+
+    def test_device_management_command_response(self):
+        from popcop.transport import ReceivedFrame
+        from popcop.standard import encode, decode
+        from popcop.standard.device_management import CommandResponseMessage, Command, CommandExecutionStatus
+        from popcop import STANDARD_FRAME_TYPE_CODE
+
+        # Encoding a full frame then stripping the delimiters, type code, and CRC.
+        self.assertEqual(encode(CommandResponseMessage(Command.LAUNCH_BOOTLOADER,
+                                                       CommandExecutionStatus.MAYBE_LATER))[1:-6],
+                         bytes([9, 0, 2, 0, 2]))
+        self.assertEqual(encode(CommandResponseMessage(Command.PRINT_DIAGNOSTICS_VERBOSE,
+                                                       CommandExecutionStatus.OK))[1:-6],
+                         bytes([9, 0, 5, 0, 0]))
+
+        msg = decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE, bytes([9, 0, 1, 0, 1]), 0))
+        self.assertIsInstance(msg, CommandResponseMessage)
+        self.assertEqual(msg.command, Command.POWER_OFF)
+        self.assertEqual(msg.status, CommandExecutionStatus.BAD_COMMAND)
+
+    def test_bootloader_status_request(self):
+        from popcop.transport import ReceivedFrame
+        from popcop.standard import encode, decode
+        from popcop.standard.bootloader import State, StatusRequestMessage
+        from popcop import STANDARD_FRAME_TYPE_CODE
+
+        # Encoding a full frame then stripping the delimiters, type code, and CRC.
+        self.assertEqual(encode(StatusRequestMessage(State.APP_UPGRADE_IN_PROGRESS))[1:-6], bytes([10, 0, 3]))
+
+        msg = decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE, bytes([10, 0, 4]), 0))
+        self.assertIsInstance(msg, StatusRequestMessage)
+        self.assertEqual(msg.desired_state, State.READY_TO_BOOT)
+
+    def test_bootloader_status_response(self):
+        from popcop.transport import ReceivedFrame
+        from popcop.standard import encode, decode
+        from popcop.standard.bootloader import State, StatusResponseMessage
+        from popcop import STANDARD_FRAME_TYPE_CODE
+
+        # Encoding a full frame then stripping the delimiters, type code, and CRC.
+        self.assertEqual(encode(StatusResponseMessage(Decimal('0.000123456'),
+                                                      0xBADC0FFEE,
+                                                      State.BOOT_CANCELLED))[1:-6],
+                         bytes([11, 0,
+                                0x40, 0xe2, 1, 0, 0, 0, 0, 0,
+                                0xEE, 0xFF, 0xC0, 0xAD, 0x0B, 0, 0, 0,
+                                2]))
+
+        msg = decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE,
+                                   bytes([11, 0,
+                                          0x40, 0xe2, 1, 0, 0, 0, 0, 0,
+                                          0xEE, 0xFF, 0xC0, 0xAD, 0x0B, 0, 0, 0,
+                                          2]), 0))
+        self.assertIsInstance(msg, StatusResponseMessage)
+        self.assertEqual(msg.uptime, Decimal('0.000123456'))
+        self.assertEqual(msg.flags, 0xBADC0FFEE)
+        self.assertEqual(msg.state, State.BOOT_CANCELLED)
+
+    def test_bootloader_image_data_request(self):
+        from popcop.transport import ReceivedFrame
+        from popcop.standard import encode, decode
+        from popcop.standard.bootloader import ImageType, ImageDataRequestMessage
+        from popcop import STANDARD_FRAME_TYPE_CODE
+
+        # Encoding a full frame then stripping the delimiters, type code, and CRC.
+        self.assertEqual(encode(ImageDataRequestMessage(123456,
+                                                        ImageType.CERTIFICATE_OF_AUTHENTICITY,
+                                                        b'Hello world!'))[1:-6],
+                         bytes([12, 0,
+                                0x40, 0xe2, 1, 0, 0, 0, 0, 0,   # 123456
+                                1]) + b'Hello world!')
+
+        msg = decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE,
+                                   bytes([12, 0,
+                                          0x40, 0xe2, 1, 0, 0, 0, 0, 0,  # 123456
+                                          1]) + b'Hello world!', 0))
+        self.assertIsInstance(msg, ImageDataRequestMessage)
+        self.assertEqual(msg.image_offset, 123456)
+        self.assertEqual(msg.image_type, ImageType.CERTIFICATE_OF_AUTHENTICITY)
+        self.assertEqual(msg.image_data, b'Hello world!')
+
+    def test_bootloader_image_data_response(self):
+        from popcop.transport import ReceivedFrame
+        from popcop.standard import encode, decode
+        from popcop.standard.bootloader import ImageType, ImageDataResponseMessage
+        from popcop import STANDARD_FRAME_TYPE_CODE
+
+        # Encoding a full frame then stripping the delimiters, type code, and CRC.
+        self.assertEqual(encode(ImageDataResponseMessage(123456,
+                                                         ImageType.CERTIFICATE_OF_AUTHENTICITY,
+                                                         b'Hello world!'))[1:-6],
+                         bytes([13, 0,
+                                0x40, 0xe2, 1, 0, 0, 0, 0, 0,   # 123456
+                                1]) + b'Hello world!')
+
+        msg = decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE,
+                                   bytes([13, 0,
+                                          0x40, 0xe2, 1, 0, 0, 0, 0, 0,  # 123456
+                                          1]) + b'Hello world!', 0))
+        self.assertIsInstance(msg, ImageDataResponseMessage)
+        self.assertEqual(msg.image_offset, 123456)
+        self.assertEqual(msg.image_type, ImageType.CERTIFICATE_OF_AUTHENTICITY)
+        self.assertEqual(msg.image_data, b'Hello world!')
+
 
 @unittest.skipUnless(serial, 'PySerial is not available. Please install it to test this feature.')
 class TestSerialMultiprocessing(unittest.TestCase):
