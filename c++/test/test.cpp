@@ -1903,7 +1903,7 @@ TEST_CASE("DeviceManagementCommandResponseMessage")
     REQUIRE(decode(msg.encode())->status == DeviceManagementCommandResponseMessage::Status::Ok);
 
     msg.command = DeviceManagementCommandResponseMessage::Command::FactoryReset;
-    msg.command = DeviceManagementCommandResponseMessage::Status::MaybeLater;
+    msg.status = DeviceManagementCommandResponseMessage::Status::MaybeLater;
     REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::DeviceManagementCommandResponse), 0,
                                       3, 0, 2));
     REQUIRE(decode(msg.encode())->command == DeviceManagementCommandResponseMessage::Command::FactoryReset);
