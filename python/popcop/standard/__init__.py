@@ -31,6 +31,7 @@ from .message_base import MessageBase
 from .node_info import NodeInfoMessage
 from . import register
 from . import device_management
+from . import bootloader
 
 
 DEFAULT_STANDARD_REQUEST_TIMEOUT = 1.0

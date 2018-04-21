@@ -412,6 +412,19 @@ class TestStandardMessages(unittest.TestCase):
         self.assertEqual(msg.command, Command.POWER_OFF)
         self.assertEqual(msg.status, CommandExecutionStatus.BAD_COMMAND)
 
+    def test_bootloader_status_request(self):
+        from popcop.transport import ReceivedFrame
+        from popcop.standard import encode, decode
+        from popcop.standard.bootloader import State, StatusRequestMessage
+        from popcop import STANDARD_FRAME_TYPE_CODE
+
+        # Encoding a full frame then stripping the delimiters, type code, and CRC.
+        self.assertEqual(encode(StatusRequestMessage(State.APP_UPGRADE_IN_PROGRESS))[1:-6], bytes([10, 0, 3]))
+
+        msg = decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE, bytes([10, 0, 4]), 0))
+        self.assertIsInstance(msg, StatusRequestMessage)
+        self.assertEqual(msg.desired_state, State.READY_TO_BOOT)
+
 
 @unittest.skipUnless(serial, 'PySerial is not available. Please install it to test this feature.')
 class TestSerialMultiprocessing(unittest.TestCase):

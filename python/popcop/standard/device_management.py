@@ -24,7 +24,6 @@
 #
 
 import enum
-import typing
 import struct
 from .message_base import MessageBase
 
