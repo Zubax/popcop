@@ -2351,6 +2351,16 @@ enum class BootloaderState : std::uint8_t
 };
 
 /**
+ * The bootloader protocol supports several types of images that can be written.
+ * Not all of them must be supported by the target.
+ */
+enum class BootloaderImageType : std::uint8_t
+{
+    Application                 = 0,
+    CertificateOfAuthenticity   = 1,
+};
+
+/**
  * Bootloader status request; contains the desired status, the response will contain the actual new status.
  *
  *      Offset  Type            Name            Description
@@ -2512,6 +2522,129 @@ struct BootloaderStatusResponseMessage
 
         return msg;
     }
+};
+
+/// Implementation details; do not use that in user code
+namespace detail_
+{
+/**
+ * Base type for request/response messages.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u64             image_offset    Offset from the beginning of the image. Must grow sequentially.
+ *      1       u8              image_type      Kind of image contained in the message:
+ *                                                  0 - application
+ *                                                  1 - certificate of authenticity
+ *      9       u8[<=256]       image_data      Image data at the specified offset. All messages except the last
+ *                                              one are required to contain exactly 256 bytes of image data.
+ *                                              The last message is required to contain less than 256 bytes of
+ *                                              image data, possibly zero if the image size is 256-byte aligned.
+ *                                              Terminated at the end of the message (implicit length).
+ *  -----------------------------------------------------------------------------------------------
+ *      265
+ */
+template <typename Derived>
+struct BootloaderImageDataMessageBase
+{
+    static constexpr std::size_t MinEncodedSize = 9;
+    static constexpr std::size_t MaxEncodedSize = 265;
+
+    /**
+     * All fields of this message type.
+     */
+     std::uint64_t image_offset = 0;
+     BootloaderImageType image_type{};
+     senoval::Vector<std::uint8_t, 256> image_data;
+
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
+     */
+    template <typename OutputIterator>
+    std::size_t encode(OutputIterator begin) const
+    {
+        presentation::StreamEncoder encoder(begin);
+        MessageHeader(Derived::ID).encode(encoder);
+        encoder.addU64(image_offset);
+        encoder.addU8(std::uint8_t(image_type));
+        encoder.addBytes(image_data);
+        assert(encoder.getOffset() <= (MaxEncodedSize + MessageHeader::Size));
+        assert(encoder.getOffset() >= (MinEncodedSize + MessageHeader::Size));
+        return encoder.getOffset();
+    }
+
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    DynamicMessageBuffer<MaxEncodedSize> encode() const
+    {
+        DynamicMessageBuffer<MaxEncodedSize> buf;
+        const std::size_t size = encode(std::back_inserter(buf));
+        (void) size;
+        assert(size == buf.size());
+        return buf;
+    }
+
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     */
+    template <typename InputIterator>
+    static std::optional<Derived> tryDecode(InputIterator begin, InputIterator end)
+    {
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
+        if (!header || (header->message_id != Derived::ID))
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() < MinEncodedSize)
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() > MaxEncodedSize)
+        {
+            return {};
+        }
+
+        Derived msg;
+        msg.image_offset = decoder.fetchU64();
+        msg.image_type = BootloaderImageType(decoder.fetchU8());
+        decoder.fetchBytes(std::back_inserter(msg.image_data),
+                           decoder.getRemainingLength());
+        return msg;
+    }
+};
+
+} // namespace detail_
+
+/**
+ * This message is used to write new application images via the bootloader.
+ * It can also be utilized to read data back, but this is not considered useful at the moment.
+ */
+struct BootloaderImageDataRequestMessage :
+    public detail_::BootloaderImageDataMessageBase<BootloaderImageDataRequestMessage>
+{
+    static constexpr MessageID ID = MessageID::BootloaderImageDataRequest;
+};
+
+/**
+ * The counterpart for the request message.
+ * The response always contains the actual data from the memory.
+ * The host compares the written data with the response and determines whether the write was successful.
+ * All fields except image_data must have the same values as in the request.
+ */
+struct BootloaderImageDataResponseMessage :
+    public detail_::BootloaderImageDataMessageBase<BootloaderImageDataResponseMessage>
+{
+    static constexpr MessageID ID = MessageID::BootloaderImageDataResponse;
 };
 
 } // namespace standard
