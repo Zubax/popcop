@@ -1858,3 +1858,54 @@ TEST_CASE("RegisterDiscoveryResponseMessage")
     REQUIRE(decode(msg.encode())->name[0] == 'Z');
     REQUIRE(decode(msg.encode())->name[92] == 'Z');
 }
+
+
+TEST_CASE("DeviceManagementCommandRequestMessage")
+{
+    using standard::MessageID;
+    using standard::DeviceManagementCommandRequestMessage;
+
+    const auto decode = [](const auto& container)
+    {
+        return DeviceManagementCommandRequestMessage::tryDecode(container.begin(), container.end());
+    };
+
+    DeviceManagementCommandRequestMessage msg;
+    REQUIRE(msg.command == DeviceManagementCommandRequestMessage::Command::Restart);
+
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::DeviceManagementCommandRequest), 0,
+                                      0, 0));
+    REQUIRE(decode(msg.encode())->command == DeviceManagementCommandRequestMessage::Command::Restart);
+
+    msg.command = DeviceManagementCommandRequestMessage::Command::FactoryReset;
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::DeviceManagementCommandRequest), 0,
+                                      3, 0));
+    REQUIRE(decode(msg.encode())->command == DeviceManagementCommandRequestMessage::Command::FactoryReset);
+}
+
+
+TEST_CASE("DeviceManagementCommandResponseMessage")
+{
+    using standard::MessageID;
+    using standard::DeviceManagementCommandResponseMessage;
+
+    const auto decode = [](const auto& container)
+    {
+        return DeviceManagementCommandResponseMessage::tryDecode(container.begin(), container.end());
+    };
+
+    DeviceManagementCommandResponseMessage msg;
+    REQUIRE(msg.command == DeviceManagementCommandResponseMessage::Command::Restart);
+
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::DeviceManagementCommandResponse), 0,
+                                      0, 0, 0));
+    REQUIRE(decode(msg.encode())->command == DeviceManagementCommandResponseMessage::Command::Restart);
+    REQUIRE(decode(msg.encode())->status == DeviceManagementCommandResponseMessage::Status::Ok);
+
+    msg.command = DeviceManagementCommandResponseMessage::Command::FactoryReset;
+    msg.command = DeviceManagementCommandResponseMessage::Status::MaybeLater;
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::DeviceManagementCommandResponse), 0,
+                                      3, 0, 2));
+    REQUIRE(decode(msg.encode())->command == DeviceManagementCommandResponseMessage::Command::FactoryReset);
+    REQUIRE(decode(msg.encode())->status == DeviceManagementCommandResponseMessage::Status::MaybeLater);
+}

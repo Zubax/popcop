@@ -1019,6 +1019,15 @@ enum class MessageID : std::uint16_t
     RegisterDataResponse            = 2,
     RegisterDiscoveryRequest        = 3,
     RegisterDiscoveryResponse       = 4,
+    RegisterTraceSetupRequest       = 5,
+    RegisterTraceSetupResponse      = 6,
+    RegisterTraceEvent              = 7,
+    DeviceManagementCommandRequest  = 8,
+    DeviceManagementCommandResponse = 9,
+    BootloaderStatusRequest         = 10,
+    BootloaderStatusResponse        = 11,
+    BootloaderImageDataRequest      = 12,
+    BootloaderImageDataResponse     = 13,
 };
 
 /**
@@ -2118,6 +2127,188 @@ struct RegisterDiscoveryResponseMessage
         {
             return {};
         }
+
+        return msg;
+    }
+};
+
+/**
+ * Generic device command message.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u16             command         Generic command code
+ *  -----------------------------------------------------------------------------------------------
+ *      2
+ */
+struct DeviceManagementCommandRequestMessage
+{
+    static constexpr std::size_t EncodedSize = 2;
+
+    static constexpr MessageID ID = MessageID::DeviceManagementCommandRequest;
+
+    /**
+     * Standard generic device command set.
+     * Commands should be idempotent whenever possible.
+     */
+    enum class Command : std::uint16_t
+    {
+        Restart                     = 0,
+        PowerOff                    = 1,
+        LaunchBootloader            = 2,
+        FactoryReset                = 3,
+        PrintDiagnosticsBrief       = 4,
+        PrintDiagnosticsVerbose     = 5,
+    };
+
+    /**
+     * All fields of this message type.
+     */
+    Command command{};
+
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
+     */
+    template <typename OutputIterator>
+    std::size_t encode(OutputIterator begin) const
+    {
+        presentation::StreamEncoder encoder(begin);
+        MessageHeader(ID).encode(encoder);
+        encoder.addU16(std::uint16_t(command));
+        assert(encoder.getOffset() == (EncodedSize + MessageHeader::Size));
+        return encoder.getOffset();
+    }
+
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    StaticMessageBuffer<EncodedSize> encode() const
+    {
+        StaticMessageBuffer<EncodedSize> buf;
+        const std::size_t size = encode(buf.begin());
+        (void) size;
+        assert(size == buf.size());
+        return buf;
+    }
+
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     */
+    template <typename InputIterator>
+    static std::optional<DeviceManagementCommandRequestMessage> tryDecode(InputIterator begin, InputIterator end)
+    {
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
+        if (!header || (header->message_id != ID))
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() != EncodedSize)
+        {
+            return {};
+        }
+
+        DeviceManagementCommandRequestMessage msg;
+        msg.command = Command(decoder.fetchU16());
+
+        return msg;
+    }
+};
+
+/**
+ * Generic device command response message.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u16             command         Generic command code copied from the request
+ *      2       u8              status          Command execution status.
+ *  -----------------------------------------------------------------------------------------------
+ *      3
+ */
+struct DeviceManagementCommandResponseMessage
+{
+    static constexpr std::size_t EncodedSize = 3;
+
+    static constexpr MessageID ID = MessageID::DeviceManagementCommandResponse;
+
+    using Command = DeviceManagementCommandRequestMessage::Command;
+
+    /**
+     * Command execution result.
+     */
+    enum class Status : std::uint8_t
+    {
+        Ok                  = 0,
+        BadCommand          = 1,
+        MaybeLater          = 2,
+    };
+
+    /**
+     * All fields of this message type.
+     */
+    Command command{};
+    Status status{};
+
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
+     */
+    template <typename OutputIterator>
+    std::size_t encode(OutputIterator begin) const
+    {
+        presentation::StreamEncoder encoder(begin);
+        MessageHeader(ID).encode(encoder);
+        encoder.addU16(std::uint16_t(command));
+        encoder.addU8(std::uint8_t(status));
+        assert(encoder.getOffset() == (EncodedSize + MessageHeader::Size));
+        return encoder.getOffset();
+    }
+
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    StaticMessageBuffer<EncodedSize> encode() const
+    {
+        StaticMessageBuffer<EncodedSize> buf;
+        const std::size_t size = encode(buf.begin());
+        (void) size;
+        assert(size == buf.size());
+        return buf;
+    }
+
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     */
+    template <typename InputIterator>
+    static std::optional<DeviceManagementCommandResponseMessage> tryDecode(InputIterator begin, InputIterator end)
+    {
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
+        if (!header || (header->message_id != ID))
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() != EncodedSize)
+        {
+            return {};
+        }
+
+        DeviceManagementCommandResponseMessage msg;
+        msg.command = Command(decoder.fetchU16());
+        msg.status  = Status(decoder.fetchU8());
 
         return msg;
     }
