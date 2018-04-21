@@ -25,7 +25,8 @@
 
 import enum
 import struct
-from .message_base import MessageBase
+from decimal import Decimal
+from .message_base import MessageBase, NANOSECONDS_PER_SECOND
 
 
 class State(enum.IntEnum):
@@ -102,3 +103,38 @@ class StatusRequestMessage(MessageBase):
         return StatusRequestMessage(State(desired_state))
 
 
+class StatusResponseMessage(MessageBase):
+    """
+    Bootloader status response; contains the current status and stuff.
+
+        Offset  Type            Name            Description
+    -----------------------------------------------------------------------------------------------
+        0       u64             uptime_ns       Bootloader's uptime in nanoseconds.
+        8       u64             flags           Reserved.
+        16      u8              state           The current state of the bootloader's standard state machine.
+    -----------------------------------------------------------------------------------------------
+        17
+    """
+    MESSAGE_ID = 11
+
+    _STRUCT = struct.Struct('<QQB')
+
+    def __init__(self,
+                 uptime: Decimal,
+                 flags: int,
+                 state: State):
+        self.uptime = Decimal(uptime)           # Uptime is in seconds
+        self.flags = int(flags)
+        self.state = State(int(state))          # Validness check
+
+    def _encode(self) -> bytes:
+        return self._STRUCT.pack(int(self.uptime * NANOSECONDS_PER_SECOND),
+                                 int(self.flags),
+                                 int(self.state))
+
+    @staticmethod
+    def _decode(encoded: bytes) -> 'StatusResponseMessage':
+        uptime_ns, flags, state = StatusResponseMessage._STRUCT.unpack(encoded)
+        return StatusResponseMessage(Decimal(uptime_ns) / NANOSECONDS_PER_SECOND,
+                                     flags,
+                                     State(state))

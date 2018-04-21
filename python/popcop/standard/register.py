@@ -26,7 +26,7 @@
 import enum
 import typing
 from decimal import Decimal
-from .message_base import MessageBase
+from .message_base import MessageBase, NANOSECONDS_PER_SECOND
 from .string_representable import StringRepresentable
 
 
@@ -156,9 +156,6 @@ _VALUE_TYPE_ANNOTATION = typing.Union[
 ]
 
 
-_NANOSECONDS_PER_SECOND = 1000000000
-
-
 class DataRequestMessage(MessageBase):
     """
     Register read request if the value is empty.
@@ -239,7 +236,7 @@ class DataResponseMessage(MessageBase):
         _enforce_serializability(self.type_id, self.value)
 
     def _encode(self) -> bytes:
-        timestamp_ns = int(self.timestamp * _NANOSECONDS_PER_SECOND)
+        timestamp_ns = int(self.timestamp * NANOSECONDS_PER_SECOND)
         out = _struct_pack('Q', timestamp_ns) + \
             bytes([int(self.flags)]) + \
             _encode_name(self.name) + \
@@ -255,7 +252,7 @@ class DataResponseMessage(MessageBase):
         msg = DataResponseMessage()
         timestamp_ns, = _struct_unpack('Q', encoded[:8])
         encoded = encoded[8:]
-        msg.timestamp = Decimal(timestamp_ns) / _NANOSECONDS_PER_SECOND
+        msg.timestamp = Decimal(timestamp_ns) / NANOSECONDS_PER_SECOND
         msg.flags, encoded = Flags(encoded[0]), encoded[1:]
         msg.name, encoded = _decode_name(encoded)
         msg.type_id, msg.value = _decode_value(encoded)
