@@ -38,13 +38,19 @@ class Command(enum.IntEnum):
     PRINT_DIAGNOSTICS_VERBOSE   = 5
 
 
+class CommandExecutionStatus(enum.IntEnum):
+    OK              = 0
+    BAD_COMMAND     = 1
+    MAYBE_LATER     = 2
+
+
 class CommandRequestMessage(MessageBase):
     """
     Generic device command message.
 
         Offset  Type            Name            Description
     -----------------------------------------------------------------------------------------------
-        0       u16             command         Generic command code
+        0       u16             command         Generic command code.
     -----------------------------------------------------------------------------------------------
         2
     """
@@ -64,3 +70,31 @@ class CommandRequestMessage(MessageBase):
         return CommandRequestMessage(Command(command))
 
 
+class CommandResponseMessage(MessageBase):
+    """
+    Generic device command response message.
+
+        Offset  Type            Name            Description
+    -----------------------------------------------------------------------------------------------
+        0       u16             command         Generic command code copied from the request.
+        2       u8              status          Command execution status.
+    -----------------------------------------------------------------------------------------------
+        3
+    """
+    MESSAGE_ID = 9
+
+    _STRUCT = struct.Struct('<HB')
+
+    def __init__(self,
+                 command: Command,
+                 status: CommandExecutionStatus):
+        self.command = Command(int(command))                # Validness check
+        self.status = CommandExecutionStatus(int(status))   # Ditto
+
+    def _encode(self) -> bytes:
+        return self._STRUCT.pack(int(self.command), int(self.status))
+
+    @staticmethod
+    def _decode(encoded: bytes) -> 'CommandResponseMessage':
+        command, status = CommandResponseMessage._STRUCT.unpack(encoded)
+        return CommandResponseMessage(Command(command), CommandExecutionStatus(status))

@@ -2228,7 +2228,7 @@ struct DeviceManagementCommandRequestMessage
  *
  *      Offset  Type            Name            Description
  *  -----------------------------------------------------------------------------------------------
- *      0       u16             command         Generic command code copied from the request
+ *      0       u16             command         Generic command code copied from the request.
  *      2       u8              status          Command execution status.
  *  -----------------------------------------------------------------------------------------------
  *      3
