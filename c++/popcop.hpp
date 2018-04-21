@@ -2133,6 +2133,21 @@ struct RegisterDiscoveryResponseMessage
 };
 
 /**
+ * Standard generic device command set.
+ * Commands should be idempotent whenever possible.
+ * More can be added in the future.
+ */
+enum class DeviceManagementCommand : std::uint16_t
+{
+    Restart                     = 0,
+    PowerOff                    = 1,
+    LaunchBootloader            = 2,
+    FactoryReset                = 3,
+    PrintDiagnosticsBrief       = 4,
+    PrintDiagnosticsVerbose     = 5,
+};
+
+/**
  * Generic device command message.
  *
  *      Offset  Type            Name            Description
@@ -2148,23 +2163,9 @@ struct DeviceManagementCommandRequestMessage
     static constexpr MessageID ID = MessageID::DeviceManagementCommandRequest;
 
     /**
-     * Standard generic device command set.
-     * Commands should be idempotent whenever possible.
-     */
-    enum class Command : std::uint16_t
-    {
-        Restart                     = 0,
-        PowerOff                    = 1,
-        LaunchBootloader            = 2,
-        FactoryReset                = 3,
-        PrintDiagnosticsBrief       = 4,
-        PrintDiagnosticsVerbose     = 5,
-    };
-
-    /**
      * All fields of this message type.
      */
-    Command command{};
+    DeviceManagementCommand command{};
 
     /**
      * Encodes the message into the provided sequential iterator.
@@ -2216,7 +2217,7 @@ struct DeviceManagementCommandRequestMessage
         }
 
         DeviceManagementCommandRequestMessage msg;
-        msg.command = Command(decoder.fetchU16());
+        msg.command = DeviceManagementCommand(decoder.fetchU16());
 
         return msg;
     }
@@ -2238,8 +2239,6 @@ struct DeviceManagementCommandResponseMessage
 
     static constexpr MessageID ID = MessageID::DeviceManagementCommandResponse;
 
-    using Command = DeviceManagementCommandRequestMessage::Command;
-
     /**
      * Command execution result.
      */
@@ -2253,7 +2252,7 @@ struct DeviceManagementCommandResponseMessage
     /**
      * All fields of this message type.
      */
-    Command command{};
+    DeviceManagementCommand command{};
     Status status{};
 
     /**
@@ -2307,7 +2306,7 @@ struct DeviceManagementCommandResponseMessage
         }
 
         DeviceManagementCommandResponseMessage msg;
-        msg.command = Command(decoder.fetchU16());
+        msg.command = DeviceManagementCommand(decoder.fetchU16());
         msg.status  = Status(decoder.fetchU8());
 
         return msg;
