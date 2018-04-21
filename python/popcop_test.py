@@ -450,6 +450,52 @@ class TestStandardMessages(unittest.TestCase):
         self.assertEqual(msg.flags, 0xBADC0FFEE)
         self.assertEqual(msg.state, State.BOOT_CANCELLED)
 
+    def test_bootloader_image_data_request(self):
+        from popcop.transport import ReceivedFrame
+        from popcop.standard import encode, decode
+        from popcop.standard.bootloader import ImageType, ImageDataRequestMessage
+        from popcop import STANDARD_FRAME_TYPE_CODE
+
+        # Encoding a full frame then stripping the delimiters, type code, and CRC.
+        self.assertEqual(encode(ImageDataRequestMessage(123456,
+                                                        ImageType.CERTIFICATE_OF_AUTHENTICITY,
+                                                        b'Hello world!'))[1:-6],
+                         bytes([12, 0,
+                                0x40, 0xe2, 1, 0, 0, 0, 0, 0,   # 123456
+                                1]) + b'Hello world!')
+
+        msg = decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE,
+                                   bytes([12, 0,
+                                          0x40, 0xe2, 1, 0, 0, 0, 0, 0,  # 123456
+                                          1]) + b'Hello world!', 0))
+        self.assertIsInstance(msg, ImageDataRequestMessage)
+        self.assertEqual(msg.image_offset, 123456)
+        self.assertEqual(msg.image_type, ImageType.CERTIFICATE_OF_AUTHENTICITY)
+        self.assertEqual(msg.image_data, b'Hello world!')
+
+    def test_bootloader_image_data_response(self):
+        from popcop.transport import ReceivedFrame
+        from popcop.standard import encode, decode
+        from popcop.standard.bootloader import ImageType, ImageDataResponseMessage
+        from popcop import STANDARD_FRAME_TYPE_CODE
+
+        # Encoding a full frame then stripping the delimiters, type code, and CRC.
+        self.assertEqual(encode(ImageDataResponseMessage(123456,
+                                                         ImageType.CERTIFICATE_OF_AUTHENTICITY,
+                                                         b'Hello world!'))[1:-6],
+                         bytes([13, 0,
+                                0x40, 0xe2, 1, 0, 0, 0, 0, 0,   # 123456
+                                1]) + b'Hello world!')
+
+        msg = decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE,
+                                   bytes([13, 0,
+                                          0x40, 0xe2, 1, 0, 0, 0, 0, 0,  # 123456
+                                          1]) + b'Hello world!', 0))
+        self.assertIsInstance(msg, ImageDataResponseMessage)
+        self.assertEqual(msg.image_offset, 123456)
+        self.assertEqual(msg.image_type, ImageType.CERTIFICATE_OF_AUTHENTICITY)
+        self.assertEqual(msg.image_data, b'Hello world!')
+
 
 @unittest.skipUnless(serial, 'PySerial is not available. Please install it to test this feature.')
 class TestSerialMultiprocessing(unittest.TestCase):

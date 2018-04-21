@@ -85,7 +85,14 @@ def decode(received_frame: ReceivedFrame) -> typing.Optional[MessageBase]:
 
     message_id, = decode_header(header)
 
-    for mt in MessageBase.__subclasses__():
-        if mt.MESSAGE_ID == message_id:
+    for mt in _collect_subclasses_recursively(MessageBase):
+        if hasattr(mt, 'MESSAGE_ID') and (mt.MESSAGE_ID == message_id):
             # noinspection PyProtectedMember,PyUnresolvedReferences
             return mt._decode(data)
+
+
+def _collect_subclasses_recursively(cls) -> typing.List[typing.Type]:
+    """Returns a list of all subclasses of :cls:, including indirect subclasses."""
+    return cls.__subclasses__() + [g
+                                   for s in cls.__subclasses__()
+                                   for g in _collect_subclasses_recursively(s)]

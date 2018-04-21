@@ -25,6 +25,7 @@
 
 import enum
 import struct
+import typing
 from decimal import Decimal
 from .message_base import MessageBase, NANOSECONDS_PER_SECOND
 
@@ -138,3 +139,92 @@ class StatusResponseMessage(MessageBase):
         return StatusResponseMessage(Decimal(uptime_ns) / NANOSECONDS_PER_SECOND,
                                      flags,
                                      State(state))
+
+
+class _ImageDataMessageBase(MessageBase):
+    """
+    This is a common implementation for both request and response image data messages.
+
+        Offset  Type            Name            Description
+    -----------------------------------------------------------------------------------------------
+        0       u64             image_offset    Offset from the beginning of the image. Must grow sequentially.
+        1       u8              image_type      Kind of image contained in the message:
+                                                    0 - application
+                                                    1 - certificate of authenticity
+        9       u8[<=256]       image_data      Image data at the specified offset. All messages except the last
+                                                one are required to contain exactly 256 bytes of image data.
+                                                The last message is required to contain less than 256 bytes of
+                                                image data, possibly zero if the image size is 256-byte aligned.
+                                                Terminated at the end of the message (implicit length).
+    -----------------------------------------------------------------------------------------------
+    """
+    _STRUCT = struct.Struct('<QB')      # Data omitted
+
+    MAX_IMAGE_DATA_SIZE = 256
+
+    def __init__(self):
+        self.image_offset = 0
+        self.image_type = ImageType.APPLICATION
+        self.image_data = b''
+
+    def _encode(self) -> bytes:
+        if len(self.image_data) > self.MAX_IMAGE_DATA_SIZE:
+            raise ValueError('Too much image data: %r bytes' % len(self.image_data))
+
+        return self._STRUCT.pack(int(self.image_offset),
+                                 int(self.image_type)) + bytes(self.image_data)
+
+    def _decode_in_place(self, encoded: bytes):
+        boundary = _ImageDataMessageBase._STRUCT.size
+        io, it = _ImageDataMessageBase._STRUCT.unpack(encoded[:boundary])
+        self.image_offset = io
+        self.image_type = ImageType(it)
+        self.image_data = bytes(encoded[boundary:])
+
+
+class ImageDataRequestMessage(_ImageDataMessageBase):
+    """
+    This message is used to write new application images via the bootloader.
+    It can also be utilized to read data back, but this is not considered useful at the moment.
+    """
+    MESSAGE_ID = 12
+
+    def __init__(self,
+                 image_offset: int=None,
+                 image_type: ImageType=None,
+                 image_data: typing.Union[bytes, bytearray]=None):
+        super(ImageDataRequestMessage, self).__init__()
+        self.image_offset = int(image_offset or 0)
+        self.image_type = ImageType(int(image_type or 0))    # Validation
+        self.image_data = bytes(image_data or b'')
+
+    @staticmethod
+    def _decode(encoded: bytes) -> 'ImageDataRequestMessage':
+        out = ImageDataRequestMessage()
+        out._decode_in_place(encoded)
+        return out
+
+
+class ImageDataResponseMessage(_ImageDataMessageBase):
+    """
+    The counterpart for the request message.
+    The response always contains the actual data from the memory.
+    The host compares the written data with the response and determines whether the write was successful.
+    All fields except image_data must have the same values as in the request.
+    """
+    MESSAGE_ID = 13
+
+    def __init__(self,
+                 image_offset: int=None,
+                 image_type: ImageType=None,
+                 image_data: typing.Union[bytes, bytearray]=None):
+        super(ImageDataResponseMessage, self).__init__()
+        self.image_offset = int(image_offset or 0)
+        self.image_type = ImageType(int(image_type or 0))    # Validation
+        self.image_data = bytes(image_data or b'')
+
+    @staticmethod
+    def _decode(encoded: bytes) -> 'ImageDataResponseMessage':
+        out = ImageDataResponseMessage()
+        out._decode_in_place(encoded)
+        return out
