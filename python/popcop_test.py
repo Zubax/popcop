@@ -379,6 +379,20 @@ class TestStandardMessages(unittest.TestCase):
         self.assertEqual(msg.name, 'Hello')
         print(msg)
 
+    def test_device_management_command_request(self):
+        from popcop.transport import ReceivedFrame
+        from popcop.standard import encode, decode
+        from popcop.standard.device_management import CommandRequestMessage, Command
+        from popcop import STANDARD_FRAME_TYPE_CODE
+
+        # Encoding a full frame then stripping the delimiters, type code, and CRC.
+        self.assertEqual(encode(CommandRequestMessage(Command.LAUNCH_BOOTLOADER))[1:-6],         bytes([8, 0, 2, 0]))
+        self.assertEqual(encode(CommandRequestMessage(Command.PRINT_DIAGNOSTICS_VERBOSE))[1:-6], bytes([8, 0, 5, 0]))
+
+        msg = decode(ReceivedFrame(STANDARD_FRAME_TYPE_CODE, bytes([8, 0, 1, 0]), 0))
+        self.assertIsInstance(msg, CommandRequestMessage)
+        self.assertEqual(msg.command, Command.POWER_OFF)
+
 
 @unittest.skipUnless(serial, 'PySerial is not available. Please install it to test this feature.')
 class TestSerialMultiprocessing(unittest.TestCase):
