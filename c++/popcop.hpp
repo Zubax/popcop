@@ -2319,27 +2319,27 @@ struct DeviceManagementCommandResponseMessage
  *
  *
  *     No valid application found ###################### Valid application found
- *               /----------------# Bootloader started #--v-----------------------------------------------------\
- *               |                ######################  |                                                     |
- *               v                                        v       Boot delay expired                            |
- *         +-------------+                          +-----------+  (typically zero)  +-------------+            |
- *     /-->| NoAppToBoot |     /--------------------| BootDelay |------------------->| ReadyToBoot |            |
- *     |   +-------------+     |                    +-----------+                    +-------------+            |
- *     |          |            |                          |Boot cancelled                    |ReadyToBoot is    |
- *     |Upgrade   |<-----------/                          |e.g. received a state transition  |an auxiliary      |
- *     |failed,   |Upgrade requested,                     |request to BootCancelled.         |state, it is      |
- *     |no valid  |e.g. received a state transition       v                                  |left automati-    |
- *     |image is  |request to AppUpgradeInProgress. +---------------+                        |cally ASAP.       |
- *     |now ava-  |<--------------------------------| BootCancelled |                        v                  |
- *     |ilable    |                                 +---------------+                ###############            |
- *     |          v                                        ^                         # Booting the #            |
- *     | +----------------------+ Upgrade failed, but the  |                         # application #            |
- *     \-| AppUpgradeInProgress |--------------------------/                         ###############            |
- *       +----------------------+ existing valid image was not                                                  |
- *                |               altered and remains valid.                                                    |
- *                |                                                                                             |
- *                | Upgrade successful, received image is valid.                                                |
- *                \---------------------------------------------------------------------------------------------/
+ *               /----------------# Bootloader started #----------\ /-------------------------------------------\
+ *               |                ######################          | |                                           |
+ *               v                                                v v  Boot delay expired                       |
+ *         +-------------+                               +-----------+  (typically zero)  +-------------+       |
+ *     /-->| NoAppToBoot |        /----------------------| BootDelay |------------------->| ReadyToBoot |       |
+ *     |   +-------------+       /                       +-----------+                    +-------------+       |
+ *     |          |             /                          |Boot cancelled                   |ReadyToBoot is    |
+ *     |Upgrade   |<-----------/                           |e.g. received a state transition |an auxiliary      /
+ *     |failed,   |Upgrade requested,                      |request to BootCancelled.        |state, it is     /
+ *     |no valid  |e.g. received a state transition        v                                 |left automati-  /
+ *     |image is  |request to AppUpgradeInProgress. +---------------+                        |cally ASAP.    /
+ *     |now ava-  |<--------------------------------| BootCancelled |                        v              /
+ *     |ilable    |                                 +---------------+                ###############       /
+ *     |          v                                        ^                         # Booting the #      /
+ *     | +----------------------+ Upgrade failed, but the  |                         # application #     /
+ *     \-| AppUpgradeInProgress |--------------------------/                         ###############    /
+ *       +----------------------+ existing valid image was not                                         /
+ *                |               altered and remains valid.                                          /
+ *                |                                                                                  /
+ *                | Upgrade successful, received image is valid.                                    /
+ *                \--------------------------------------------------------------------------------/
  */
 enum class BootloaderState : std::uint8_t
 {
