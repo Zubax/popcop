@@ -1909,3 +1909,65 @@ TEST_CASE("DeviceManagementCommandResponseMessage")
     REQUIRE(decode(msg.encode())->command == DeviceManagementCommandResponseMessage::Command::FactoryReset);
     REQUIRE(decode(msg.encode())->status == DeviceManagementCommandResponseMessage::Status::MaybeLater);
 }
+
+
+TEST_CASE("BootloaderStatusRequestMessage")
+{
+    using standard::MessageID;
+    using standard::BootloaderStatusRequestMessage;
+    using standard::BootloaderState;
+
+    const auto decode = [](const auto& container)
+    {
+        return BootloaderStatusRequestMessage::tryDecode(container.begin(), container.end());
+    };
+
+    BootloaderStatusRequestMessage msg;
+    REQUIRE(msg.desired_state == BootloaderState::NoAppToBoot);
+
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::BootloaderStatusRequest), 0,
+                                      0));
+    REQUIRE(decode(msg.encode())->desired_state == BootloaderState::NoAppToBoot);
+
+    msg.desired_state = BootloaderState::BootCancelled;
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::BootloaderStatusRequest), 0,
+                                      2));
+    REQUIRE(decode(msg.encode())->desired_state == BootloaderState::BootCancelled);
+}
+
+
+TEST_CASE("BootloaderStatusResponseMessage")
+{
+    using standard::MessageID;
+    using standard::BootloaderStatusResponseMessage;
+    using standard::BootloaderState;
+
+    const auto decode = [](const auto& container)
+    {
+        return BootloaderStatusResponseMessage::tryDecode(container.begin(), container.end());
+    };
+
+    BootloaderStatusResponseMessage msg;
+    REQUIRE(msg.timestamp.count() == 0);
+    REQUIRE(msg.flags == 0);
+    REQUIRE(msg.state == BootloaderState::NoAppToBoot);
+
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::BootloaderStatusResponse), 0,
+                                      0, 0, 0, 0, 0, 0, 0, 0,
+                                      0, 0, 0, 0, 0, 0, 0, 0,
+                                      0));
+    REQUIRE(decode(msg.encode())->timestamp.count() == 0);
+    REQUIRE(decode(msg.encode())->flags == 0);
+    REQUIRE(decode(msg.encode())->state == BootloaderState::NoAppToBoot);
+
+    msg.timestamp = standard::Timestamp(123456);
+    msg.flags = 0xBADC0FFEEUL;
+    msg.state = BootloaderState::BootCancelled;
+    REQUIRE(msg.encode() == makeArray(std::uint8_t(MessageID::BootloaderStatusResponse), 0,
+                                      0x40, 0xe2, 1, 0, 0, 0, 0, 0,
+                                      0xEE, 0xFF, 0xC0, 0xAD, 0x0B, 0, 0, 0,
+                                      2));
+    REQUIRE(decode(msg.encode())->timestamp.count() == 123456);
+    REQUIRE(decode(msg.encode())->flags == 0xBADC0FFEEUL);
+    REQUIRE(decode(msg.encode())->state == BootloaderState::BootCancelled);
+}

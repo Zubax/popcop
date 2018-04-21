@@ -2314,6 +2314,206 @@ struct DeviceManagementCommandResponseMessage
     }
 };
 
+/**
+ * All possible states of the generic bootloader API. See the following state machine diagram.
+ *
+ *
+ *     No valid application found ###################### Valid application found
+ *               /----------------# Bootloader started #--v-----------------------------------------------------\
+ *               |                ######################  |                                                     |
+ *               v                                        v       Boot delay expired                            |
+ *         +-------------+                          +-----------+  (typically zero)  +-------------+            |
+ *     /-->| NoAppToBoot |     /--------------------| BootDelay |------------------->| ReadyToBoot |            |
+ *     |   +-------------+     |                    +-----------+                    +-------------+            |
+ *     |          |            |                          |Boot cancelled                    |ReadyToBoot is    |
+ *     |Upgrade   |<-----------/                          |e.g. received a state transition  |an auxiliary      |
+ *     |failed,   |Upgrade requested,                     |request to BootCancelled.         |state, it is      |
+ *     |no valid  |e.g. received a state transition       v                                  |left automati-    |
+ *     |image is  |request to AppUpgradeInProgress. +---------------+                        |cally ASAP.       |
+ *     |now ava-  |<--------------------------------| BootCancelled |                        v                  |
+ *     |ilable    |                                 +---------------+                ###############            |
+ *     |          v                                        ^                         # Booting the #            |
+ *     | +----------------------+ Upgrade failed, but the  |                         # application #            |
+ *     \-| AppUpgradeInProgress |--------------------------/                         ###############            |
+ *       +----------------------+ existing valid image was not                                                  |
+ *                |               altered and remains valid.                                                    |
+ *                |                                                                                             |
+ *                | Upgrade successful, received image is valid.                                                |
+ *                \---------------------------------------------------------------------------------------------/
+ */
+enum class BootloaderState : std::uint8_t
+{
+    NoAppToBoot             = 0,
+    BootDelay               = 1,
+    BootCancelled           = 2,
+    AppUpgradeInProgress    = 3,
+    ReadyToBoot             = 4,
+};
+
+/**
+ * Bootloader status request; contains the desired status, the response will contain the actual new status.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u8              desired_state   Which state the bootloader should transition to.
+ *  -----------------------------------------------------------------------------------------------
+ *      1
+ */
+struct BootloaderStatusRequestMessage
+{
+    static constexpr std::size_t EncodedSize = 1;
+
+    static constexpr MessageID ID = MessageID::BootloaderStatusRequest;
+
+    /**
+     * Only the following states can be commanded:
+     *      NoAppToBoot             - erases the application
+     *      AppUpgradeInProgress    - initiates the upgrade process
+     *      ReadyToBoot             - commands to launch the application (if present)
+     * All other states cannot be used here.
+     */
+    BootloaderState desired_state{};
+
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
+     */
+    template <typename OutputIterator>
+    std::size_t encode(OutputIterator begin) const
+    {
+        presentation::StreamEncoder encoder(begin);
+        MessageHeader(ID).encode(encoder);
+        encoder.addU8(std::uint8_t(desired_state));
+        assert(encoder.getOffset() == (EncodedSize + MessageHeader::Size));
+        return encoder.getOffset();
+    }
+
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    StaticMessageBuffer<EncodedSize> encode() const
+    {
+        StaticMessageBuffer<EncodedSize> buf;
+        const std::size_t size = encode(buf.begin());
+        (void) size;
+        assert(size == buf.size());
+        return buf;
+    }
+
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     */
+    template <typename InputIterator>
+    static std::optional<BootloaderStatusRequestMessage> tryDecode(InputIterator begin, InputIterator end)
+    {
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
+        if (!header || (header->message_id != ID))
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() != EncodedSize)
+        {
+            return {};
+        }
+
+        BootloaderStatusRequestMessage msg;
+        msg.desired_state  = BootloaderState(decoder.fetchU8());
+
+        return msg;
+    }
+};
+
+/**
+ * Bootloader status response; contains the current status and stuff.
+ *
+ *      Offset  Type            Name            Description
+ *  -----------------------------------------------------------------------------------------------
+ *      0       u64             uptime_ns       Bootloader's uptime in nanoseconds.
+ *      8       u64             flags           Reserved.
+ *      16      u8              state           The current state of the bootloader's standard state machine.
+ *  -----------------------------------------------------------------------------------------------
+ *      17
+ */
+struct BootloaderStatusResponseMessage
+{
+    static constexpr std::size_t EncodedSize = 17;
+
+    static constexpr MessageID ID = MessageID::BootloaderStatusResponse;
+
+    /**
+     * All fields of this message type.
+     */
+    Timestamp timestamp{};
+    std::uint64_t flags = 0;
+    BootloaderState state{};
+
+    /**
+     * Encodes the message into the provided sequential iterator.
+     * The iterator can encode and emit the message on the fly - that would be highly efficient;
+     * see @ref transport::StreamEmitter.
+     * Returns the number of bytes in the encoded stream.
+     */
+    template <typename OutputIterator>
+    std::size_t encode(OutputIterator begin) const
+    {
+        presentation::StreamEncoder encoder(begin);
+        MessageHeader(ID).encode(encoder);
+        encoder.addU64(timestamp.count());
+        encoder.addU64(flags);
+        encoder.addU8(std::uint8_t(state));
+        assert(encoder.getOffset() == (EncodedSize + MessageHeader::Size));
+        return encoder.getOffset();
+    }
+
+    /**
+     * A simpler wrapper on top of the other version of @ref encode<>() that accepts an output iterator.
+     * This version encodes the message into a fixed capacity array and returns it by value.
+     * Needless to say, it is less efficient than the iterator-based version, but it's easier to use.
+     */
+    StaticMessageBuffer<EncodedSize> encode() const
+    {
+        StaticMessageBuffer<EncodedSize> buf;
+        const std::size_t size = encode(buf.begin());
+        (void) size;
+        assert(size == buf.size());
+        return buf;
+    }
+
+    /**
+     * Attempts to decode a message from the provided standard frame.
+     * The message ID value in the header will be checked.
+     */
+    template <typename InputIterator>
+    static std::optional<BootloaderStatusResponseMessage> tryDecode(InputIterator begin, InputIterator end)
+    {
+        presentation::StreamDecoder decoder(begin, end);
+        const auto header = MessageHeader::tryDecode(decoder);
+        if (!header || (header->message_id != ID))
+        {
+            return {};
+        }
+
+        if (decoder.getRemainingLength() != EncodedSize)
+        {
+            return {};
+        }
+
+        BootloaderStatusResponseMessage msg;
+        msg.timestamp = Timestamp(decoder.fetchU64());
+        msg.flags = decoder.fetchU64();
+        msg.state  = BootloaderState(decoder.fetchU8());
+
+        return msg;
+    }
+};
+
 } // namespace standard
 
 } // namespace popcop
