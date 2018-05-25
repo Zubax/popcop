@@ -2376,10 +2376,11 @@ struct BootloaderStatusRequestMessage
 
     /**
      * Only the following states can be commanded:
-     *      NoAppToBoot             - erases the application
-     *      AppUpgradeInProgress    - initiates the upgrade process
-     *      ReadyToBoot             - commands to launch the application (if present)
-     * All other states cannot be used here.
+     *      NoAppToBoot             - erases the application (optional, not mandatory to support)
+     *      AppUpgradeInProgress    - initiates the upgrade process (mandatory)
+     *      ReadyToBoot             - commands to launch the application (if present) (mandatory)
+     *      BootCancelled           - cancels the auto-boot timer (optional, not mandatory to support)
+     * All other states cannot be used here. If they are, the bootloader is free to choose the most logical action.
      */
     BootloaderState desired_state{};
 
