@@ -1014,7 +1014,7 @@ using Timestamp = std::chrono::duration<std::uint64_t, std::nano>;
  */
 enum class MessageID : std::uint16_t
 {
-    NodeInfo                        = 0,
+    EndpointInfo                    = 0,
     RegisterDataRequest             = 1,
     RegisterDataResponse            = 2,
     RegisterDiscoveryRequest        = 3,
@@ -1088,7 +1088,7 @@ template <std::size_t MaxMessageSizeNotIncludingHeader>
 using DynamicMessageBuffer = senoval::Vector<std::uint8_t, MaxMessageSizeNotIncludingHeader + MessageHeader::Size>;
 
 /**
- * Node info message representation.
+ * Endpoint info message representation.
  *
  *      Offset  Type        Name
  *  ---------------------------------------------------
@@ -1103,15 +1103,15 @@ using DynamicMessageBuffer = senoval::Vector<std::uint8_t, MaxMessageSizeNotIncl
  *      21      u8          mode                                0 - normal, 1 - bootloader
  *              u8[2]       <reserved>
  *      24      u8[16]      globally_unique_id
- *      40      u8[80]      node_name
- *      120     u8[80]      node_description
+ *      40      u8[80]      endpoint_name
+ *      120     u8[80]      endpoint_description
  *      200     u8[80]      build_environment_description
  *      280     u8[80]      runtime_environment_description
  *      360     u8[<=255]   certificate_of_authenticity         Until the end of the message
  *  ---------------------------------------------------
  *      <=615
  */
-struct NodeInfoMessage
+struct EndpointInfoMessage
 {
     static constexpr std::size_t MinEncodedSize = 360;
     static constexpr std::size_t MaxEncodedSize = 615;
@@ -1143,22 +1143,22 @@ struct NodeInfoMessage
 
     /**
      * Message fields.
-     * Note that an empty message is treated as request for node info. There is a dedicated method for that.
+     * Note that an empty message is treated as request for endpoint info. There is a dedicated method for that.
      */
     SoftwareVersion software_version;
     HardwareVersion hardware_version;
     Mode mode{};
     std::array<std::uint8_t, 16> globally_unique_id{};
-    String node_name;
-    String node_description;
+    String endpoint_name;
+    String endpoint_description;
     String build_environment_description;
     String runtime_environment_description;
     senoval::Vector<std::uint8_t, 255> certificate_of_authenticity;
 
     /**
-     * True if the message is empty. An empty message is considered a request for node info.
+     * True if the message is empty. An empty message is considered a request for endpoint info.
      */
-    bool isRequest() const { return node_name.empty() && node_description.empty(); }
+    bool isRequest() const { return endpoint_name.empty() && endpoint_description.empty(); }
 
     /**
      * Encodes the message into the provided sequential iterator.
@@ -1170,7 +1170,7 @@ struct NodeInfoMessage
     std::size_t encode(OutputIterator begin) const
     {
         presentation::StreamEncoder header_encoder(begin);
-        MessageHeader(MessageID::NodeInfo).encode(header_encoder);
+        MessageHeader(MessageID::EndpointInfo).encode(header_encoder);
         auto encoder = header_encoder.makeNew();     // Creating new encoder in order to exclude the header offset
 
         encoder.addU64(software_version.image_crc ? *software_version.image_crc : 0);
@@ -1206,9 +1206,9 @@ struct NodeInfoMessage
         encoder.addU8(std::uint8_t(mode));
         encoder.fillUpToOffset(24);
         encoder.addBytes(globally_unique_id);
-        encoder.addBytes(node_name);
+        encoder.addBytes(endpoint_name);
         encoder.fillUpToOffset(120);
-        encoder.addBytes(node_description);
+        encoder.addBytes(endpoint_description);
         encoder.fillUpToOffset(200);
         encoder.addBytes(build_environment_description);
         encoder.fillUpToOffset(280);
@@ -1244,20 +1244,20 @@ struct NodeInfoMessage
      * If no message could be parsed, an empty optional<> will be returned.
      */
     template <typename InputIterator>
-    static std::optional<NodeInfoMessage> tryDecode(InputIterator begin, InputIterator end)
+    static std::optional<EndpointInfoMessage> tryDecode(InputIterator begin, InputIterator end)
     {
         presentation::StreamDecoder header_decoder(begin, end);
         const auto header = MessageHeader::tryDecode(header_decoder);
-        if (!header || (header->message_id != MessageID::NodeInfo))
+        if (!header || (header->message_id != MessageID::EndpointInfo))
         {
             return {};
         }
 
         auto decoder = header_decoder.makeNew();     // Creating a new one to exclude header offset
-        NodeInfoMessage msg;
+        EndpointInfoMessage msg;
         if (decoder.getRemainingLength() < MinEncodedSize)
         {
-            return msg;     // An empty message is considered a request for node info.
+            return msg;     // An empty message is considered a request for endpoint info.
         }
 
         if (decoder.getRemainingLength() > MaxEncodedSize)
@@ -1309,9 +1309,9 @@ struct NodeInfoMessage
                            msg.globally_unique_id.end());
 
         assert(decoder.getOffset() == 40);
-        decoder.fetchASCIIString(msg.node_name);
+        decoder.fetchASCIIString(msg.endpoint_name);
         decoder.skipUpToOffset(120);
-        decoder.fetchASCIIString(msg.node_description);
+        decoder.fetchASCIIString(msg.endpoint_description);
         decoder.skipUpToOffset(200);
         decoder.fetchASCIIString(msg.build_environment_description);
         decoder.skipUpToOffset(280);
