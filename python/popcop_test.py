@@ -152,7 +152,7 @@ class TestParserEncoder(unittest.TestCase):
 
 
 class TestStandardMessages(unittest.TestCase):
-    def test_node_info(self):
+    def test_endpoint_info(self):
         carefully_crafted_message = bytes([
             0x00, 0x00,                                         # Message ID
 
@@ -220,7 +220,7 @@ class TestStandardMessages(unittest.TestCase):
         print(m)
         self.assertIsNotNone(m)
 
-        if isinstance(m, popcop.standard.NodeInfoMessage):
+        if isinstance(m, popcop.standard.EndpointInfoMessage):
             self.assertEqual(m.software_image_crc, 0xFFDEBC9A78563412)
             self.assertEqual(m.software_vcs_commit_id, 0xDEADBEEF)
             self.assertEqual(m.software_build_timestamp_utc.isoformat(), '2069-05-07T18:28:34')
@@ -233,13 +233,13 @@ class TestStandardMessages(unittest.TestCase):
             self.assertEqual(m.mode, m.Mode.NORMAL)
             self.assertEqual(m.globally_unique_id, bytes([0x10, 0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A, 0x09,
                                                           0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]))
-            self.assertEqual(m.node_name, 'Hello!')
-            self.assertEqual(m.node_description, 'Space!')
+            self.assertEqual(m.endpoint_name, 'Hello!')
+            self.assertEqual(m.endpoint_description, 'Space!')
             self.assertEqual(m.build_environment_description, 'upyachka')
             self.assertEqual(m.runtime_environment_description, 'RUNTIME!')
             self.assertEqual(m.certificate_of_authenticity, bytes([1, 2, 3, 4]))
         else:
-            raise ValueError('Expected node info, got %r' % type(m))
+            raise ValueError('Expected endpoint info, got %r' % type(m))
 
         # Encode test
         encoded = popcop.standard.encode(m)
@@ -538,16 +538,16 @@ class TestSerialMultiprocessing(unittest.TestCase):
                     self.fail('Could not reconstruct the loop back message')
 
             # Send standard message, read standard message back
-            msg = popcop.standard.NodeInfoMessage()
+            msg = popcop.standard.EndpointInfoMessage()
             msg.certificate_of_authenticity = b'such certificate much authenticity'
             msg.globally_unique_id[0] = 123
-            msg.node_description = 'NODE DESCRIPTION'
-            msg.node_name = 'BOB'
+            msg.endpoint_description = 'ENDPOINT DESCRIPTION'
+            msg.endpoint_name = 'BOB'
             msg.software_image_crc = 0xDEADBEEFCAFEB00B
             channel.send_standard(msg, timeout=0)
             r = channel.receive(timeout=1)
-            print('Received NodeInfo:', r)
-            if isinstance(r, popcop.standard.NodeInfoMessage):
+            print('Received EndpointInfo:', r)
+            if isinstance(r, popcop.standard.EndpointInfoMessage):
                 self.assertEqual(r.certificate_of_authenticity, msg.certificate_of_authenticity)
                 self.assertEqual(str(r), str(msg))
             else:
@@ -579,11 +579,11 @@ class TestSerialMultiprocessing(unittest.TestCase):
                 print('Sender worker started')
                 for i in range(num_messages):
                     byte_i = i % 256
-                    msg = popcop.standard.NodeInfoMessage()
+                    msg = popcop.standard.EndpointInfoMessage()
                     msg.certificate_of_authenticity = bytes([byte_i] * byte_i)
                     msg.globally_unique_id[0] = byte_i
-                    msg.node_description = str(i)
-                    msg.node_name = str(i)
+                    msg.endpoint_description = str(i)
+                    msg.endpoint_name = str(i)
                     msg.software_image_crc = i
                     channel.send_standard(msg, timeout=9999)
 
@@ -596,12 +596,12 @@ class TestSerialMultiprocessing(unittest.TestCase):
                 byte_i = i % 256
 
                 msg = channel.receive(timeout=1)
-                self.assertIsInstance(msg, popcop.standard.NodeInfoMessage)
+                self.assertIsInstance(msg, popcop.standard.EndpointInfoMessage)
 
                 self.assertEqual(msg.certificate_of_authenticity, bytes([byte_i] * byte_i))
                 self.assertEqual(msg.globally_unique_id, bytes([byte_i, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]))
-                self.assertEqual(msg.node_description, str(i))
-                self.assertEqual(msg.node_name, str(i))
+                self.assertEqual(msg.endpoint_description, str(i))
+                self.assertEqual(msg.endpoint_name, str(i))
                 self.assertEqual(msg.software_image_crc, i)
 
                 if byte_i == 0:
@@ -650,8 +650,8 @@ class TestSerialMultiprocessing(unittest.TestCase):
             # Awaiting is optional. However, if the future is not awaited, thrown exceptions will be lost!
             await ch.send_raw(b'123456')
             await ch.send_application_specific(123, b'Hello world!', timeout=2)
-            asyncio.gather(ch.send_standard(popcop.standard.NodeInfoMessage, timeout=3),
-                           ch.send_standard(popcop.standard.NodeInfoMessage()))
+            asyncio.gather(ch.send_standard(popcop.standard.EndpointInfoMessage, timeout=3),
+                           ch.send_standard(popcop.standard.EndpointInfoMessage()))
             print('Writer done')
 
         async def reader():
@@ -668,13 +668,13 @@ class TestSerialMultiprocessing(unittest.TestCase):
             self.assertEqual(item.payload, b'Hello world!')
 
             item = await ch.receive(1)
-            self.assertIsInstance(item, popcop.standard.NodeInfoMessage)
+            self.assertIsInstance(item, popcop.standard.EndpointInfoMessage)
             self.assertTrue(item.is_request)
             print(item)
 
             item = await ch.receive(1)
-            self.assertIsInstance(item, popcop.standard.NodeInfoMessage)
-            self.assertEqual(str(item), str(popcop.standard.NodeInfoMessage()))
+            self.assertIsInstance(item, popcop.standard.EndpointInfoMessage)
+            self.assertEqual(str(item), str(popcop.standard.EndpointInfoMessage()))
             print(item)
 
             print('Reader done')

@@ -28,7 +28,7 @@ from .. import transport
 from ..transport import ReceivedFrame
 from .. import STANDARD_FRAME_TYPE_CODE
 from .message_base import MessageBase
-from .node_info import NodeInfoMessage
+from .endpoint_info import EndpointInfoMessage
 from . import register
 from . import device_management
 from . import bootloader
@@ -72,7 +72,7 @@ def decode(received_frame: ReceivedFrame) -> typing.Optional[MessageBase]:
     :param received_frame:  The received frame. The frame type code must be STANDARD_FRAME_TYPE_CODE,
                             otherwise the function throws ValueError.
 
-    :return:                Decoded message object such as NodeInfoMessage, or None.
+    :return:                Decoded message object such as EndpointInfoMessage, or None.
     """
     if received_frame.frame_type_code != STANDARD_FRAME_TYPE_CODE:
         raise ValueError('This is not a standard frame: %r' % received_frame)

@@ -554,8 +554,8 @@ class Channel:
                       msg_or_type,
                       timeout: typing.Optional[float]=None):
         """
-        :param msg_or_type: Message to transmit, or its class if the intention is to request the message from the node.
-                            Note that the message will be encoded in the IO worker process.
+        :param msg_or_type: Message to transmit, or its class if the intention is to request the message from the
+                            endpoint. Note that the message will be encoded in the IO worker process.
         :param timeout:     Optional timeout in seconds. None or zero for non-blocking operation (this is the default).
         """
         if isinstance(msg_or_type, standard.MessageBase):
