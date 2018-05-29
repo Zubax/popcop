@@ -936,7 +936,7 @@ TEST_CASE("StreamDecoder-slow")
 }
 
 
-TEST_CASE("NodeInfoMessage")
+TEST_CASE("EndpointInfoMessage")
 {
     const std::array<std::uint8_t, 366> carefully_crafted_message
     {{
@@ -1004,7 +1004,7 @@ TEST_CASE("NodeInfoMessage")
     // Check whether all items are inited correctly
     REQUIRE(carefully_crafted_message.back() == 0x04);
 
-    standard::NodeInfoMessage msg;
+    standard::EndpointInfoMessage msg;
 
     msg.software_version.image_crc = 0xFFDEBC9A78563412ULL;
     msg.software_version.vcs_commit_id = 0xDEADBEEFUL;
@@ -1017,12 +1017,12 @@ TEST_CASE("NodeInfoMessage")
     msg.hardware_version.major = 3;
     msg.hardware_version.minor = 4;
 
-    msg.mode = standard::NodeInfoMessage::Mode::Normal;
+    msg.mode = standard::EndpointInfoMessage::Mode::Normal;
     msg.globally_unique_id = makeArray(0x10, 0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A, 0x09,
                                        0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01);
 
-    msg.node_name = "Hello!";
-    msg.node_description = "Space!";
+    msg.endpoint_name = "Hello!";
+    msg.endpoint_description = "Space!";
     msg.build_environment_description = "upyachka";
     msg.runtime_environment_description = "RUNTIME!";
 
@@ -1032,7 +1032,7 @@ TEST_CASE("NodeInfoMessage")
     msg.certificate_of_authenticity.push_back(4);
 
     REQUIRE_FALSE(msg.isRequest());
-    REQUIRE(standard::NodeInfoMessage().isRequest());
+    REQUIRE(standard::EndpointInfoMessage().isRequest());
 
     const auto encoded = msg.encode();
     REQUIRE(encoded.size() == standard::MessageHeader::Size + 360 + 4);
@@ -1046,8 +1046,8 @@ TEST_CASE("NodeInfoMessage")
     /*
      * Decoding test
      */
-    const auto m2 = standard::NodeInfoMessage::tryDecode(carefully_crafted_message.begin(),
-                                                         carefully_crafted_message.end());
+    const auto m2 = standard::EndpointInfoMessage::tryDecode(carefully_crafted_message.begin(),
+                                                             carefully_crafted_message.end());
     REQUIRE(m2);
     std::cout << "After reparsing:" << std::endl;
     printHexDump(m2->encode());
@@ -1057,43 +1057,43 @@ TEST_CASE("NodeInfoMessage")
         auto ccm = carefully_crafted_message;
 
         // Change mode
-        ccm[21 + standard::MessageHeader::Size] = std::uint8_t(standard::NodeInfoMessage::Mode::Bootloader);
-        REQUIRE(standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.end())->mode ==
-                    standard::NodeInfoMessage::Mode::Bootloader);
+        ccm[21 + standard::MessageHeader::Size] = std::uint8_t(standard::EndpointInfoMessage::Mode::Bootloader);
+        REQUIRE(standard::EndpointInfoMessage::tryDecode(ccm.begin(), ccm.end())->mode ==
+                    standard::EndpointInfoMessage::Mode::Bootloader);
 
         // Use invalid mode
         ccm[21 + standard::MessageHeader::Size] = 123;
-        REQUIRE(!standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.end()));  // Not parsed
+        REQUIRE(!standard::EndpointInfoMessage::tryDecode(ccm.begin(), ccm.end()));  // Not parsed
     }
 
     {
         auto ccm = carefully_crafted_message;
         ccm[0] = 123;       // Different message ID
-        REQUIRE(!standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.end()));  // Not parsed
+        REQUIRE(!standard::EndpointInfoMessage::tryDecode(ccm.begin(), ccm.end()));  // Not parsed
     }
 
     {
         auto ccm = carefully_crafted_message;
 
         // Short message is treated as request
-        REQUIRE(standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.begin() + 360));
-        REQUIRE(standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.begin() + 360)->isRequest());
+        REQUIRE(standard::EndpointInfoMessage::tryDecode(ccm.begin(), ccm.begin() + 360));
+        REQUIRE(standard::EndpointInfoMessage::tryDecode(ccm.begin(), ccm.begin() + 360)->isRequest());
 
-        REQUIRE(!standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.begin() + 700));  // Too long
-        REQUIRE(standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.end()));           // Just right
+        REQUIRE(!standard::EndpointInfoMessage::tryDecode(ccm.begin(), ccm.begin() + 700));  // Too long
+        REQUIRE(standard::EndpointInfoMessage::tryDecode(ccm.begin(), ccm.end()));           // Just right
     }
 
     {
         auto ccm = carefully_crafted_message;
         // Default
-        auto m = standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.end());
+        auto m = standard::EndpointInfoMessage::tryDecode(ccm.begin(), ccm.end());
         REQUIRE(m);
         REQUIRE(m->software_version.image_crc.has_value());
         REQUIRE(m->software_version.release_build);
         REQUIRE(m->software_version.dirty_build);
         // Erase flags
         ccm[20 + standard::MessageHeader::Size] = 0;
-        m = standard::NodeInfoMessage::tryDecode(ccm.begin(), ccm.end());
+        m = standard::EndpointInfoMessage::tryDecode(ccm.begin(), ccm.end());
         REQUIRE(m);
         REQUIRE(!m->software_version.image_crc.has_value());
         REQUIRE(!m->software_version.release_build);

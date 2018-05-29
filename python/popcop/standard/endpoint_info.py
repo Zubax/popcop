@@ -29,10 +29,10 @@ import datetime
 from .message_base import MessageBase
 
 
-class NodeInfoMessage(MessageBase):
+class EndpointInfoMessage(MessageBase):
     """
-    Representation of the standard NodeInfo message.
-    An empty message is treated as a request for node info.
+    Representation of the standard EndpointInfo message.
+    An empty message is treated as a request for endpoint info.
 
       Offset    Type    Name
     ---------------------------------------------------
@@ -47,8 +47,8 @@ class NodeInfoMessage(MessageBase):
          21     u8          mode                                0 - normal, 1 - bootloader
          22     u8[2]       <reserved>
          24     u8[16]      globally_unique_id
-         40     u8[80]      node_name
-        120     u8[80]      node_description
+         40     u8[80]      endpoint_name
+        120     u8[80]      endpoint_description
         200     u8[80]      build_environment_description
         280     u8[80]      runtime_environment_description
         360     u8[<=255]   certificate_of_authenticity         Until the end of the message
@@ -80,8 +80,8 @@ class NodeInfoMessage(MessageBase):
         self.software_dirty_build = False
         self.mode = self.Mode.NORMAL
         self.globally_unique_id = bytearray([0] * 16)
-        self.node_name = ''
-        self.node_description = ''
+        self.endpoint_name = ''
+        self.endpoint_description = ''
         self.build_environment_description = ''
         self.runtime_environment_description = ''
         self.certificate_of_authenticity = bytearray()
@@ -89,9 +89,9 @@ class NodeInfoMessage(MessageBase):
     @property
     def is_request(self) -> bool:
         """
-        Per Popcop, an empty node info message is a request for node info.
+        Per Popcop, an empty endpoint info message is a request for endpoint info.
         """
-        return (not self.node_description) and (not self.node_name)
+        return (not self.endpoint_description) and (not self.endpoint_name)
 
     def _encode(self) -> bytes:
         flags = 0
@@ -124,18 +124,18 @@ class NodeInfoMessage(MessageBase):
                                 flags,
                                 int(self.mode),
                                 bytes(self.globally_unique_id),
-                                self.node_name.encode(),
-                                self.node_description.encode(),
+                                self.endpoint_name.encode(),
+                                self.endpoint_description.encode(),
                                 self.build_environment_description.encode(),
                                 self.runtime_environment_description.encode())
 
         return out + bytes(self.certificate_of_authenticity)
 
     @staticmethod
-    def _decode(encoded: bytes) -> 'NodeInfoMessage':
-        msg = NodeInfoMessage()
+    def _decode(encoded: bytes) -> 'EndpointInfoMessage':
+        msg = EndpointInfoMessage()
 
-        if len(encoded) < msg._STRUCT.size:   # An empty serialized payload is just a request for node info
+        if len(encoded) < msg._STRUCT.size:   # An empty serialized payload is just a request for endpoint info
             return msg
 
         msg.software_image_crc, \
@@ -148,8 +148,8 @@ class NodeInfoMessage(MessageBase):
             flags, \
             mode, \
             msg.globally_unique_id, \
-            node_name, \
-            node_description, \
+            endpoint_name, \
+            endpoint_description, \
             build_environment_description, \
             runtime_environment_description, \
             = msg._STRUCT.unpack(encoded[:msg._STRUCT.size])
@@ -163,8 +163,8 @@ class NodeInfoMessage(MessageBase):
         msg.software_dirty_build   = bool(flags & msg._Flags.SOFTWARE_DIRTY_BUILD)
 
         msg.mode = msg.Mode(mode)
-        msg.node_name                       = _decode_fixed_capacity_string(node_name)
-        msg.node_description                = _decode_fixed_capacity_string(node_description)
+        msg.endpoint_name                   = _decode_fixed_capacity_string(endpoint_name)
+        msg.endpoint_description            = _decode_fixed_capacity_string(endpoint_description)
         msg.build_environment_description   = _decode_fixed_capacity_string(build_environment_description)
         msg.runtime_environment_description = _decode_fixed_capacity_string(runtime_environment_description)
 
