@@ -41,6 +41,7 @@ class CommandExecutionStatus(enum.IntEnum):
     OK              = 0
     BAD_COMMAND     = 1
     MAYBE_LATER     = 2
+    FAILURE         = 3
 
 
 class CommandRequestMessage(MessageBase):

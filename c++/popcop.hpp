@@ -2247,6 +2247,7 @@ struct DeviceManagementCommandResponseMessage
         Ok                  = 0,
         BadCommand          = 1,
         MaybeLater          = 2,
+        Failure             = 3,
     };
 
     /**
