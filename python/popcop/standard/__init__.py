@@ -28,9 +28,10 @@ from .. import transport
 from ..transport import ReceivedFrame
 from .. import STANDARD_FRAME_TYPE_CODE
 from .message_base import MessageBase
-from . import register
-from . import device_management
 from . import bootloader
+from . import device_management
+from . import endpoint_info
+from . import register
 
 
 DEFAULT_STANDARD_REQUEST_TIMEOUT = 1.0

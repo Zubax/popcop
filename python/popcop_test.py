@@ -220,7 +220,7 @@ class TestStandardMessages(unittest.TestCase):
         print(m)
         self.assertIsNotNone(m)
 
-        if isinstance(m, popcop.standard.EndpointInfoMessage):
+        if isinstance(m, popcop.standard.endpoint_info.EndpointInfoMessage):
             self.assertEqual(m.software_image_crc, 0xFFDEBC9A78563412)
             self.assertEqual(m.software_vcs_commit_id, 0xDEADBEEF)
             self.assertEqual(m.software_build_timestamp_utc.isoformat(), '2069-05-07T18:28:34')
@@ -538,7 +538,7 @@ class TestSerialMultiprocessing(unittest.TestCase):
                     self.fail('Could not reconstruct the loop back message')
 
             # Send standard message, read standard message back
-            msg = popcop.standard.EndpointInfoMessage()
+            msg = popcop.standard.endpoint_info.EndpointInfoMessage()
             msg.certificate_of_authenticity = b'such certificate much authenticity'
             msg.globally_unique_id[0] = 123
             msg.endpoint_description = 'ENDPOINT DESCRIPTION'
@@ -547,7 +547,7 @@ class TestSerialMultiprocessing(unittest.TestCase):
             channel.send_standard(msg, timeout=0)
             r = channel.receive(timeout=1)
             print('Received EndpointInfo:', r)
-            if isinstance(r, popcop.standard.EndpointInfoMessage):
+            if isinstance(r, popcop.standard.endpoint_info.EndpointInfoMessage):
                 self.assertEqual(r.certificate_of_authenticity, msg.certificate_of_authenticity)
                 self.assertEqual(str(r), str(msg))
             else:
@@ -575,11 +575,12 @@ class TestSerialMultiprocessing(unittest.TestCase):
         with contextlib.closing(popcop.physical.serial_multiprocessing.Channel(self._port_name,
                                                                                max_payload_size=1024,
                                                                                baudrate=230400)) as channel:
+            # noinspection PyShadowingNames
             def stephen_king():
                 print('Sender worker started')
                 for i in range(num_messages):
                     byte_i = i % 256
-                    msg = popcop.standard.EndpointInfoMessage()
+                    msg = popcop.standard.endpoint_info.EndpointInfoMessage()
                     msg.certificate_of_authenticity = bytes([byte_i] * byte_i)
                     msg.globally_unique_id[0] = byte_i
                     msg.endpoint_description = str(i)
@@ -596,7 +597,7 @@ class TestSerialMultiprocessing(unittest.TestCase):
                 byte_i = i % 256
 
                 msg = channel.receive(timeout=1)
-                self.assertIsInstance(msg, popcop.standard.EndpointInfoMessage)
+                self.assertIsInstance(msg, popcop.standard.endpoint_info.EndpointInfoMessage)
 
                 self.assertEqual(msg.certificate_of_authenticity, bytes([byte_i] * byte_i))
                 self.assertEqual(msg.globally_unique_id, bytes([byte_i, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]))
@@ -650,8 +651,9 @@ class TestSerialMultiprocessing(unittest.TestCase):
             # Awaiting is optional. However, if the future is not awaited, thrown exceptions will be lost!
             await ch.send_raw(b'123456')
             await ch.send_application_specific(123, b'Hello world!', timeout=2)
-            asyncio.gather(ch.send_standard(popcop.standard.EndpointInfoMessage, timeout=3),
-                           ch.send_standard(popcop.standard.EndpointInfoMessage()))
+            # noinspection PyAsyncCall
+            asyncio.gather(ch.send_standard(popcop.standard.endpoint_info.EndpointInfoMessage, timeout=3),
+                           ch.send_standard(popcop.standard.endpoint_info.EndpointInfoMessage()))
             print('Writer done')
 
         async def reader():
@@ -668,13 +670,13 @@ class TestSerialMultiprocessing(unittest.TestCase):
             self.assertEqual(item.payload, b'Hello world!')
 
             item = await ch.receive(1)
-            self.assertIsInstance(item, popcop.standard.EndpointInfoMessage)
+            self.assertIsInstance(item, popcop.standard.endpoint_info.EndpointInfoMessage)
             self.assertTrue(item.is_request)
             print(item)
 
             item = await ch.receive(1)
-            self.assertIsInstance(item, popcop.standard.EndpointInfoMessage)
-            self.assertEqual(str(item), str(popcop.standard.EndpointInfoMessage()))
+            self.assertIsInstance(item, popcop.standard.endpoint_info.EndpointInfoMessage)
+            self.assertEqual(str(item), str(popcop.standard.endpoint_info.EndpointInfoMessage()))
             print(item)
 
             print('Reader done')
