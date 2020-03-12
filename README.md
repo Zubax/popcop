@@ -1,11 +1,12 @@
 # PoPCoP
 
-[![Join the chat at https://gitter.im/Zubax/general](https://img.shields.io/badge/GITTER-join%20chat-green.svg)](https://gitter.im/Zubax/general)
 [![Travis CI build status](https://travis-ci.org/Zubax/popcop.svg?branch=master)](https://travis-ci.org/Zubax/popcop)
 
 This is PoPCoP - a simple Point-to-Point Control Protocol.
 
-The documentation is missing. Come back later.
+**OBSOLETE -- use [UAVCAN/serial](https://pyuavcan.readthedocs.io/en/latest/.apidoc_generated/pyuavcan.transport.serial.html) instead.
+This project was an experiment in applying the UAVCAN philosophy for byte-level L1 links.
+It culminated in the proposal of a serial transport for UAVCAN.**
 
 ## Languages
 
